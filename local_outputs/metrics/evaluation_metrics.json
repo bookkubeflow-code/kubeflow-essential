@@ -1,0 +1,6 @@
+{
+  "final_accuracy": 0.98,
+  "model_size_mb": 0.0012350082397460938,
+  "test_samples": 150,
+  "classification_report": "              precision    recall  f1-score   support\n\n      setosa       1.00      1.00      1.00        50\n  versicolor       1.00      0.94      0.97        50\n   virginica       0.94      1.00      0.97        50\n\n    accuracy                           0.98       150\n   macro avg       0.98      0.98      0.98       150\nweighted avg       0.98      0.98      0.98       150\n"
+}
