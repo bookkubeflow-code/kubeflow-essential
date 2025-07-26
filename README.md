@@ -65,6 +65,14 @@ kubeflow-pipelines/
 - Complete pipeline lifecycle support
 - Bypasses KFP client authentication issues
 
+### `pipeline_runner.py` - Production Pipeline Runner 🆕
+- Real-time monitoring and status tracking
+- Automatic retry logic with exponential backoff
+- Timeout handling for long-running pipelines
+- Comprehensive error reporting and logging
+- Run metadata tracking and storage
+- Integration with custom Dex authentication
+
 ## 📚 Documentation
 
 - **[Compile Pipeline Setup Guide](COMPILE_PIPELINE_SETUP_GUIDE.md)** - Complete guide for `compile_and_run.py`
@@ -86,6 +94,23 @@ source kubeflow.env
 python kfp_client.py
 ```
 
+### Production Pipeline Runner (NEW! 🆕)
+```bash
+# Run with monitoring and error handling
+source kfp_env_311/bin/activate
+source kubeflow.env
+python pipeline_runner.py
+
+# Or use programmatically
+from pipeline_runner import PipelineRunner
+runner = PipelineRunner()
+result = runner.run_pipeline(
+    pipeline_path='compiled_pipelines/ml_training_latest.yaml',
+    experiment_name='Production',
+    wait_for_completion=True
+)
+```
+
 ### Test Your Setup
 ```bash
 source kfp_env_311/bin/activate
@@ -101,6 +126,8 @@ python setup_credentials.py test
 - ✅ **Version Management** - Timestamped outputs with convenient symlinks
 - ✅ **Intelligent Fallbacks** - Multiple submission methods with graceful degradation
 - ✅ **Production Ready** - Enterprise-grade tooling and error handling
+- ✅ **Pipeline Monitoring** - Real-time status tracking and timeout handling
+- ✅ **Run Management** - Comprehensive execution tracking and metadata storage
 
 ## 🔍 Troubleshooting
 

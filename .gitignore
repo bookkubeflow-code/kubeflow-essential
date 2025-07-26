@@ -151,4 +151,5 @@ kfp_env*/
 # compiled_pipelines/ - Include compiled pipelines in git
 # *.yaml - Include YAML files in git for pipeline definitions
 !kubeflow.env.example
-manifests/ 
+manifests/
+runs/ 
