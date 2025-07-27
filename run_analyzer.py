@@ -410,19 +410,19 @@ if __name__ == "__main__":
         
         # Get recent runs for demonstration
         try:
-            from pipeline_runner import PipelineRunner
-            runner = PipelineRunner()
-            recent_runs = runner.list_runs(limit=5)
+            # Get runs directly using the client (avoiding pipeline_runner bug)
+            runs = client.list_runs(namespace='kubeflow-user-example-com', page_size=5)
             
-            if recent_runs:
+            if runs.runs:
                 print(f"\n📋 Recent Runs (for testing):")
-                for i, run in enumerate(recent_runs[:3], 1):
-                    print(f"   {i}. {run['name']} ({run['run_id'][:8]}...) - {run.get('status', 'Unknown')}")
+                for i, run in enumerate(runs.runs[:3], 1):
+                    status = getattr(run, 'state', 'Unknown')
+                    print(f"   {i}. {run.display_name} ({run.run_id[:8]}...) - {status}")
                 
                 # Analyze the most recent run
-                latest_run_id = recent_runs[0]['run_id']
+                latest_run = runs.runs[0]
                 print(f"\n🔍 Analyzing most recent run...")
-                analyze_run(latest_run_id, client)
+                analyze_run(latest_run.run_id, client)
             else:
                 print("\n📋 No recent runs found")
         
