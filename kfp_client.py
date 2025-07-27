@@ -175,10 +175,11 @@ class RawKFPClient:
         """Create a new pipeline run"""
         url = f"{self.api_base_url}/runs?namespace={self.namespace}"
         
+        # The correct payload format for Kubeflow v2 API
         payload = {
             "display_name": run_name,
             "description": f"Run created via Raw KFP Client at {datetime.now()}",
-            "pipeline_spec": {
+            "pipeline_version_reference": {
                 "pipeline_id": pipeline_id
             },
             "runtime_config": {
@@ -188,7 +189,18 @@ class RawKFPClient:
         }
         
         response = self.session.post(url, json=payload)
-        response.raise_for_status()
+        
+        if not response.ok:
+            error_details = f"Status: {response.status_code}, URL: {url}"
+            try:
+                error_body = response.json()
+                error_details += f", Body: {error_body}"
+            except:
+                error_body = response.text
+                error_details += f", Text: {error_body[:500]}"
+            
+            raise Exception(f"Failed to create run: {error_details}")
+        
         return response.json()
     
     def submit_pipeline_run(

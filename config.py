@@ -34,33 +34,63 @@ class Config:
         self.KUBEFLOW_USER_NAMESPACE = os.getenv('KUBEFLOW_USER_NAMESPACE', 'kubeflow-user-example-com')
         
     def get_client(self):
-        """Get KFP client with appropriate authentication method."""
+        """Get KFP client with appropriate authentication method, trying the most reliable methods first."""
         import kfp
         
-        # Try custom Dex authentication first (for local development)
+                # Method 1: Try Dex authentication with cookie injection (best for multi-user)
+        # This provides proper user identity and namespace context
         if self.USE_DEX_AUTH and os.path.exists('dex_auth.py'):
             try:
-                print("🔐 Attempting custom Dex authentication...")
+                print("🔐 Trying Dex authentication with cookie injection...")
                 from dex_auth import DexSessionManager
                 
-                # Create DexSessionManager with proper parameters
+                # Get Dex cookies
                 auth_manager = DexSessionManager(
                     endpoint_url=self.KUBEFLOW_ENDPOINT,
                     dex_username=self.KUBEFLOW_USERNAME,
                     dex_password=self.KUBEFLOW_PASSWORD
                 )
-                client = auth_manager.get_authenticated_client()
+                cookies = auth_manager.get_session_cookies()
                 
-                # Verify connection with our custom client
-                print(f"✓ Connected to Kubeflow Pipelines at {self.KFP_HOST} (Dex Auth)")
+                # Create client with cookies
+                client = kfp.Client(
+                    host=f"{self.KUBEFLOW_ENDPOINT}/pipeline",
+                    namespace=self.KFP_NAMESPACE,
+                    cookies=cookies
+                )
+                
+                # Verify it works
+                healthz = client.get_kfp_healthz()
+                print(f"✅ SUCCESS: Dex authentication with cookies working!")
+                print(f"   Healthz: {healthz}")
                 return client
                 
             except Exception as e:
                 print(f"⚠️ Dex authentication failed: {e}")
-                print("Falling back to standard authentication...")
+                print("Falling back to direct ml-pipeline connection...")
         
-        # Standard KFP client authentication
+        # Method 2: Try direct ml-pipeline port-forward (limited multi-user support)
         try:
+            print("🚀 Trying direct ml-pipeline connection (port 8888)...")
+            client = kfp.Client(host='http://localhost:8888', namespace=self.KFP_NAMESPACE)
+            
+            # Quick test to verify it works
+            healthz = client.get_kfp_healthz()
+            pipelines = client.list_pipelines(page_size=1)
+            print(f"✅ SUCCESS: Direct ml-pipeline connection working!")
+            print(f"   Healthz: {healthz}")
+            print(f"   Found {len(pipelines.pipelines) if pipelines.pipelines else 0} pipelines")
+            print("   ⚠️ WARNING: Limited experiment/run support due to missing user identity")
+            return client
+            
+        except Exception as e:
+            print(f"⚠️ Direct ml-pipeline connection failed: {e}")
+            print("   Make sure port-forward is running: kubectl port-forward -n kubeflow svc/ml-pipeline 8888:8888")
+            print("   Falling back to standard authentication...")
+        
+        # Method 3: Standard KFP client authentication (will likely fail with Dex)
+        try:
+            print("🔧 Trying standard KFP client...")
             if self.USE_AUTH:
                 client = kfp.Client(
                     host=self.KFP_HOST,
@@ -75,18 +105,23 @@ class Config:
             
             # Verify connection
             _ = client.list_pipelines(page_size=1)
-            print(f"✓ Connected to Kubeflow Pipelines at {self.KFP_HOST}")
+            print(f"✅ Connected to Kubeflow Pipelines at {self.KFP_HOST}")
             return client
             
         except Exception as e:
-            print(f"✗ Failed to connect to {self.KFP_HOST}")
-            print(f"  Error: {e}")
-            print("\n  Troubleshooting:")
-            print("  1. Check if port-forward is running: ps aux | grep port-forward")
-            print("  2. Verify Kubeflow is running: kubectl get pods -n kubeflow")
-            print("  3. Try accessing UI: http://localhost:8080")
-            print("  4. Set up credentials: python setup_credentials.py")
-            print("  5. Source credentials: source kubeflow.env")
+            # Standard KFP client failure is expected with Dex auth
+            if "healthz endpoint" in str(e) or "401" in str(e):
+                print(f"⚠️ Standard KFP client incompatible with Dex auth (expected)")
+                print("💡 Use config.get_custom_client() or our kfp_client.py instead")
+            else:
+                print(f"✗ Failed to connect to {self.KFP_HOST}")
+                print(f"  Error: {e}")
+                print("\n  Troubleshooting:")
+                print("  1. Check if port-forward is running: ps aux | grep port-forward")
+                print("  2. Verify Kubeflow is running: kubectl get pods -n kubeflow")
+                print("  3. Try accessing UI: http://localhost:8080")
+                print("  4. Set up credentials: python setup_credentials.py")
+                print("  5. Source credentials: source kubeflow.env")
             raise
     
     def get_custom_client(self):
@@ -128,22 +163,52 @@ class Config:
             print(f"   {var}: {value}")
         print()
         
-        # Test 2: Custom authentication
+        # Test 2: Direct ml-pipeline connection (preferred method)
+        print("2️⃣ Testing Direct ML-Pipeline Connection (Preferred):")
+        try:
+            import kfp
+            client = kfp.Client(host='http://localhost:8888', namespace=self.KFP_NAMESPACE)
+            healthz = client.get_kfp_healthz()
+            pipelines = client.list_pipelines(page_size=1)
+            print(f"   ✅ Direct connection working!")
+            print(f"   Healthz: {healthz}")
+            print(f"   Found {len(pipelines.pipelines) if pipelines.pipelines else 0} pipelines")
+            print("   🎉 This is the preferred method - fastest and most reliable!")
+            return True
+        except Exception as e:
+            print(f"   ❌ Direct connection failed: {e}")
+            print("   💡 Start port-forward: kubectl port-forward -n kubeflow svc/ml-pipeline 8888:8888")
+        print()
+        
+        # Test 3: Dex authentication with cookie injection
         if self.USE_DEX_AUTH:
             try:
-                print("2️⃣ Testing Custom Dex Authentication:")
+                print("3️⃣ Testing Dex Authentication with Cookie Injection:")
                 from dex_auth import DexSessionManager
+                import kfp
+                
+                # Get Dex cookies
                 auth_manager = DexSessionManager(
                     endpoint_url=self.KUBEFLOW_ENDPOINT,
                     dex_username=self.KUBEFLOW_USERNAME,
                     dex_password=self.KUBEFLOW_PASSWORD
                 )
-                client = auth_manager.get_authenticated_client()
-                print("   ✅ Dex authentication successful")
+                cookies = auth_manager.get_session_cookies()
+                
+                # Create client with cookies
+                client = kfp.Client(
+                    host=f"{self.KUBEFLOW_ENDPOINT}/pipeline",
+                    namespace=self.KFP_NAMESPACE,
+                    cookies=cookies
+                )
+                
+                healthz = client.get_kfp_healthz()
+                print("   ✅ Dex authentication with cookies successful")
+                print(f"   Healthz: {healthz}")
                 print()
                 
-                # Test 3: API access
-                print("3️⃣ Testing API Access:")
+                # Test 4: API access using our custom client
+                print("4️⃣ Testing Custom KFP Client (Direct API):")
                 from kfp_client import KFPClient
                 kfp_client = KFPClient()
                 
@@ -166,21 +231,23 @@ class Config:
                     print(f"   ❌ API test failed: {api_error}")
                 
             except Exception as auth_error:
-                print(f"   ❌ Authentication failed: {auth_error}")
+                print(f"   ❌ Dex authentication failed: {auth_error}")
         
-        # Test 4: Standard KFP client (fallback)
-        print("\n4️⃣ Testing Standard KFP Client:")
+        # Test 5: Standard KFP client fallback test
+        print("\n5️⃣ Testing get_client() Method (All Fallbacks):")
+        print("   This tests the complete fallback chain...")
         try:
             client = self.get_client()
             if client:
-                pipelines = client.list_pipelines(page_size=1)
-                print("   ✅ Standard client working")
+                print("   ✅ get_client() method working!")
+                return True
             else:
-                print("   ❌ Standard client failed")
+                print("   ❌ get_client() method failed")
         except Exception as std_error:
-            print(f"   ❌ Standard client error: {std_error}")
+            print(f"   ❌ get_client() error: {str(std_error)[:100]}...")
         
         print("\n🎯 Connection test completed!")
+        return False
 
 # Create global config instance
 config = Config()

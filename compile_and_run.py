@@ -118,14 +118,24 @@ class PipelineCompiler:
         func_name = getattr(pipeline_func, '__name__', 
                            getattr(pipeline_func, 'name', 'unknown_pipeline'))
         module_name = getattr(pipeline_func, '__module__', 'unknown_module')
-        description = getattr(pipeline_func, '__doc__', 'No description')
         
-        # Add metadata as comments
+        # Get description safely - handle complex docstrings from @dsl.pipeline
+        description = getattr(pipeline_func, '__doc__', 'No description')
+        if description:
+            # Clean up description - keep only first line and escape properly
+            description_lines = description.strip().split('\n')
+            description = description_lines[0].strip()
+            # Remove any problematic characters that could break YAML
+            description = description.replace('"', "'").replace('\n', ' ').replace('\r', '')
+        else:
+            description = 'No description'
+        
+        # Add metadata as properly commented YAML
         metadata = f"""# Pipeline Compilation Metadata
 # Compiled at: {datetime.now().isoformat()}
 # Function: {func_name}
 # Module: {module_name}
-# Description: {description or 'No description'}
+# Description: {description}
 # Python version: 3.11.13
 # KFP SDK version: 2.12.1
 # 
