@@ -19,7 +19,7 @@ def ml_training_pipeline(
     # Train model using the loaded dataset
     train_model_task = train_model(input_dataset=load_data_task.outputs['output_dataset'])
     
-    # Evaluate model using the same dataset and trained model
+    # Evaluate model with rich visualizations
     evaluate_model_task = evaluate_model(
         test_dataset=load_data_task.outputs['output_dataset'],
         model_input=train_model_task.outputs['model_output']
