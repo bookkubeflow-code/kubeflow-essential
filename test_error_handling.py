@@ -21,7 +21,7 @@ from typing import Dict, List, Any
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(project_root)
 
-from config import get_client
+from config import Config
 from pipeline_runner import PipelineRunner
 from run_analyzer import RunAnalyzer, RunStatus
 
@@ -31,7 +31,8 @@ class ErrorHandlingTester:
     
     def __init__(self):
         """Initialize the error handling tester."""
-        self.client = get_client()
+        config = Config()
+        self.client = config.get_client()
         self.runner = PipelineRunner()
         self.analyzer = RunAnalyzer()
         self.test_results = []
