@@ -37,11 +37,18 @@ kubeflow-pipelines/
 ├── 🚀 kfp_client.py                  # Working pipeline client  
 ├── 🔧 compile_and_run.py             # Advanced compiler
 ├── 🔑 dex_auth.py                    # Authentication library
+├── 🏃 pipeline_runner.py             # Production pipeline runner
+├── 📊 run_analyzer.py                # Advanced run analysis
+├── 🧪 test_error_handling.py         # Error handling test suite
 ├── 📁 pipelines/                     # Your ML pipeline code
-│   ├── ml_training_pipeline.py       # Main pipeline
-│   └── components/ml_ops_components.py # Pipeline components
+│   ├── ml_training_pipeline.py       # Main ML pipeline
+│   ├── resilient_pipeline.py         # Production error handling pipeline
+│   ├── error_handling_components.py  # Error handling components
+│   ├── smart_caching_pipeline.py     # Smart caching example
+│   └── components/ml_ops_components.py # ML pipeline components
 ├── 📁 compiled_pipelines/            # Generated YAML files
 ├── 📋 COMPILE_PIPELINE_SETUP_GUIDE.md # Detailed compilation docs
+├── 📋 ERROR_HANDLING_GUIDE.md        # Production error handling guide
 └── 🔒 kubeflow.env.example          # Credential template
 ```
 
@@ -76,7 +83,43 @@ kubeflow-pipelines/
 ## 📚 Documentation
 
 - **[Compile Pipeline Setup Guide](COMPILE_PIPELINE_SETUP_GUIDE.md)** - Complete guide for `compile_and_run.py`
+- **[Error Handling Guide](ERROR_HANDLING_GUIDE.md)** - Production error handling patterns and testing
 - **[kubeflow.env.example](kubeflow.env.example)** - Environment configuration template
+
+## 🛡️ Production Error Handling (NEW! 🆕)
+
+Complete implementation of production-ready error handling patterns:
+
+### Error Handling Patterns
+- **Exponential Backoff with Jitter** - Smart retry logic for transient failures
+- **Circuit Breaker Pattern** - Prevents cascade failures
+- **Graceful Degradation** - Adapts to resource constraints
+- **Conditional Execution** - Fallback paths for failures
+- **Exit Handlers** - Guaranteed cleanup
+- **Resource-Aware Processing** - Memory/CPU adaptive behavior
+
+### Available Pipelines
+```bash
+# Main resilient pipeline with all error handling patterns
+pipelines/resilient_pipeline.yaml
+
+# Error scenario testing pipeline
+pipelines/error_testing_pipeline.yaml
+
+# Your existing ML pipeline
+pipelines/ml_pipeline.yaml
+```
+
+### Quick Test
+```bash
+# Run comprehensive error handling test suite
+python test_error_handling.py
+
+# Test specific error scenarios
+python pipeline_runner.py --pipeline pipelines/error_testing_pipeline.yaml \
+  --experiment error-testing \
+  --parameters '{"test_scenario": "network_timeout", "failure_rate": 0.9}'
+```
 
 ## 🔧 Usage Examples
 
