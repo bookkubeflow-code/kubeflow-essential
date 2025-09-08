@@ -1,0 +1,414 @@
+# PIPELINE DEFINITION
+# Name: ml-training-pipeline
+# Description: A machine learning pipeline that trains and stores a model on the Iris dataset
+# Inputs:
+#    dataset_url: str [Default: 'https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv']
+components:
+  comp-evaluate-model:
+    executorLabel: exec-evaluate-model
+    inputDefinitions:
+      artifacts:
+        model_input:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+        test_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        model_metrics:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
+        performance_dashboard:
+          artifactType:
+            schemaTitle: system.HTML
+            schemaVersion: 0.0.1
+      parameters:
+        f1_score:
+          parameterType: NUMBER_DOUBLE
+        final_accuracy:
+          parameterType: NUMBER_DOUBLE
+        precision:
+          parameterType: NUMBER_DOUBLE
+        recall:
+          parameterType: NUMBER_DOUBLE
+  comp-load-data:
+    executorLabel: exec-load-data
+    inputDefinitions:
+      parameters:
+        dataset_url:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        output_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-train-model:
+    executorLabel: exec-train-model
+    inputDefinitions:
+      artifacts:
+        input_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        model_output:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+      parameters:
+        feature_count:
+          parameterType: NUMBER_INTEGER
+        training_accuracy:
+          parameterType: NUMBER_DOUBLE
+deploymentSpec:
+  executors:
+    exec-evaluate-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - evaluate_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'joblib' 'matplotlib==3.7.2' 'seaborn==0.12.2' 'plotly==5.17.0' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef evaluate_model(\n    test_dataset: dsl.Input[Dataset], \n   \
+          \ model_input: dsl.Input[Model],\n    model_metrics: dsl.Output[Metrics],\n\
+          \    performance_dashboard: dsl.Output[HTML]\n) -> NamedTuple('EvaluationOutputs',\
+          \ [('final_accuracy', float), ('precision', float), ('recall', float), ('f1_score',\
+          \ float)]):\n    \"\"\"Enhanced model evaluation with rich visualizations\
+          \ and interactive dashboard.\"\"\"\n    import pandas as pd\n    import\
+          \ numpy as np\n    from sklearn.model_selection import train_test_split\n\
+          \    from sklearn.metrics import (\n        accuracy_score, classification_report,\
+          \ confusion_matrix,\n        precision_recall_fscore_support, roc_curve,\
+          \ auc\n    )\n    from sklearn.preprocessing import LabelEncoder, label_binarize\n\
+          \    import joblib\n    import json\n    import plotly.graph_objects as\
+          \ go\n    import plotly.express as px\n    from plotly.subplots import make_subplots\n\
+          \    import matplotlib.pyplot as plt\n    import seaborn as sns\n    from\
+          \ io import StringIO\n    import base64\n    from datetime import datetime\n\
+          \n    print(\"\U0001F52C Starting Enhanced Model Evaluation with Visualizations\"\
+          )\n\n    # Load data from input artifact\n    df = pd.read_csv(test_dataset.path)\n\
+          \n    # Prepare features and target\n    feature_columns = ['sepal_length',\
+          \ 'sepal_width', 'petal_length', 'petal_width']\n    X = df[feature_columns]\n\
+          \    y = df['species']\n\n    print(f\"\U0001F4CA Evaluating with {len(df)}\
+          \ samples\")\n    print(f\"\U0001F50D Features: {feature_columns}\")\n \
+          \   print(f\"\U0001F3AF Classes: {y.unique()}\")\n\n    # Split data (same\
+          \ split as training for consistency)\n    X_train, X_test, y_train, y_test\
+          \ = train_test_split(X, y, test_size=0.2, random_state=42)\n\n    # Load\
+          \ saved model from input artifact\n    model = joblib.load(model_input.path)\n\
+          \n    # Make predictions\n    y_pred = model.predict(X_test)\n    y_pred_proba\
+          \ = model.predict_proba(X_test)\n\n    # Calculate comprehensive metrics\n\
+          \    accuracy = accuracy_score(y_test, y_pred)\n    precision, recall, f1,\
+          \ _ = precision_recall_fscore_support(y_test, y_pred, average='weighted')\n\
+          \n    # Generate classification report\n    report = classification_report(y_test,\
+          \ y_pred, output_dict=True)\n\n    # Confusion matrix\n    cm = confusion_matrix(y_test,\
+          \ y_pred)\n    class_names = model.classes_\n\n    # Feature importance\n\
+          \    feature_importance = dict(zip(feature_columns, model.feature_importances_))\n\
+          \n    print(f\"\u2705 Model Performance Metrics:\")\n    print(f\"   \U0001F4C8\
+          \ Accuracy: {accuracy:.4f}\")\n    print(f\"   \U0001F4C8 Precision: {precision:.4f}\"\
+          )\n    print(f\"   \U0001F4C8 Recall: {recall:.4f}\")\n    print(f\"   \U0001F4C8\
+          \ F1-Score: {f1:.4f}\")\n\n    # Prepare metrics for Kubeflow UI\n    kubeflow_metrics\
+          \ = {\n        'metrics': [\n            {'name': 'accuracy', 'numberValue':\
+          \ float(accuracy), 'format': 'PERCENTAGE'},\n            {'name': 'precision',\
+          \ 'numberValue': float(precision), 'format': 'PERCENTAGE'},\n          \
+          \  {'name': 'recall', 'numberValue': float(recall), 'format': 'PERCENTAGE'},\n\
+          \            {'name': 'f1_score', 'numberValue': float(f1), 'format': 'PERCENTAGE'}\n\
+          \        ]\n    }\n\n    # Save metrics\n    with open(model_metrics.path,\
+          \ 'w') as f:\n        json.dump(kubeflow_metrics, f, indent=2)\n\n    #\
+          \ Create rich HTML dashboard\n    print(\"\U0001F3A8 Creating Interactive\
+          \ Performance Dashboard...\")\n\n    # Start HTML document\n    html_content\
+          \ = StringIO()\n    html_content.write(f\"\"\"\n    <!DOCTYPE html>\n  \
+          \  <html>\n    <head>\n        <title>Model Performance Dashboard</title>\n\
+          \        <script src=\"https://cdn.plot.ly/plotly-latest.min.js\"></script>\n\
+          \        <style>\n            body {{ \n                font-family: 'Segoe\
+          \ UI', Tahoma, Geneva, Verdana, sans-serif;\n                margin: 20px;\n\
+          \                background: linear-gradient(135deg, #667eea 0%, #764ba2\
+          \ 100%);\n                color: #333;\n            }}\n            .dashboard-container\
+          \ {{\n                background: white;\n                border-radius:\
+          \ 15px;\n                padding: 30px;\n                box-shadow: 0 10px\
+          \ 30px rgba(0,0,0,0.2);\n                max-width: 1200px;\n          \
+          \      margin: 0 auto;\n            }}\n            .header {{\n       \
+          \         text-align: center;\n                margin-bottom: 30px;\n  \
+          \              padding-bottom: 20px;\n                border-bottom: 3px\
+          \ solid #667eea;\n            }}\n            .header h1 {{\n          \
+          \      color: #667eea;\n                font-size: 2.5em;\n            \
+          \    margin: 0;\n            }}\n            .timestamp {{\n           \
+          \     color: #666;\n                font-size: 0.9em;\n                margin-top:\
+          \ 5px;\n            }}\n            .metrics-grid {{\n                display:\
+          \ grid;\n                grid-template-columns: repeat(auto-fit, minmax(200px,\
+          \ 1fr));\n                gap: 20px;\n                margin-bottom: 30px;\n\
+          \            }}\n            .metric-card {{\n                background:\
+          \ linear-gradient(135deg, #667eea, #764ba2);\n                color: white;\n\
+          \                padding: 25px;\n                border-radius: 12px;\n\
+          \                text-align: center;\n                box-shadow: 0 5px\
+          \ 15px rgba(102, 126, 234, 0.3);\n                transition: transform\
+          \ 0.3s ease;\n            }}\n            .metric-card:hover {{\n      \
+          \          transform: translateY(-5px);\n            }}\n            .metric-card\
+          \ h3 {{\n                margin: 0 0 10px 0;\n                font-size:\
+          \ 1.1em;\n                opacity: 0.9;\n            }}\n            .metric-value\
+          \ {{\n                font-size: 2.2em;\n                font-weight: bold;\n\
+          \                margin: 0;\n            }}\n            .chart-container\
+          \ {{\n                margin: 30px 0;\n                background: #f8f9fa;\n\
+          \                padding: 25px;\n                border-radius: 12px;\n\
+          \                box-shadow: 0 3px 10px rgba(0,0,0,0.1);\n            }}\n\
+          \            .chart-title {{\n                font-size: 1.4em;\n      \
+          \          font-weight: bold;\n                color: #667eea;\n       \
+          \         margin-bottom: 15px;\n                text-align: center;\n  \
+          \          }}\n            .feature-grid {{\n                display: grid;\n\
+          \                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));\n\
+          \                gap: 15px;\n                margin-top: 20px;\n       \
+          \     }}\n            .feature-item {{\n                background: white;\n\
+          \                padding: 15px;\n                border-radius: 8px;\n \
+          \               border-left: 4px solid #667eea;\n            }}\n      \
+          \  </style>\n    </head>\n    <body>\n        <div class=\"dashboard-container\"\
+          >\n            <div class=\"header\">\n                <h1>\U0001F916 ML\
+          \ Model Performance Dashboard</h1>\n                <div class=\"timestamp\"\
+          >Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</div>\n   \
+          \         </div>\n    \"\"\")\n\n    # Add metrics cards\n    html_content.write('<div\
+          \ class=\"metrics-grid\">')\n    metrics_data = [\n        ('Accuracy',\
+          \ accuracy, '\U0001F4C8'),\n        ('Precision', precision, '\U0001F3AF\
+          '),\n        ('Recall', recall, '\U0001F50D'),\n        ('F1-Score', f1,\
+          \ '\u2696\uFE0F')\n    ]\n\n    for name, value, emoji in metrics_data:\n\
+          \        html_content.write(f\"\"\"\n        <div class=\"metric-card\"\
+          >\n            <h3>{emoji} {name}</h3>\n            <div class=\"metric-value\"\
+          >{value:.1%}</div>\n        </div>\n        \"\"\")\n    html_content.write('</div>')\n\
+          \n    # Create confusion matrix heatmap\n    html_content.write('<div class=\"\
+          chart-container\">')\n    html_content.write('<div class=\"chart-title\"\
+          >\U0001F4CA Confusion Matrix</div>')\n\n    fig_cm = go.Figure(data=go.Heatmap(\n\
+          \        z=cm,\n        x=class_names,\n        y=class_names,\n       \
+          \ text=cm,\n        texttemplate=\"%{text}\",\n        textfont={\"size\"\
+          : 16},\n        colorscale='Blues',\n        showscale=True\n    ))\n  \
+          \  fig_cm.update_layout(\n        title=None,\n        xaxis_title='Predicted\
+          \ Class',\n        yaxis_title='Actual Class',\n        font=dict(size=12),\n\
+          \        height=400,\n        margin=dict(l=50, r=50, t=50, b=50)\n    )\n\
+          \n    html_content.write(fig_cm.to_html(div_id=\"confusion-matrix\", include_plotlyjs=False))\n\
+          \    html_content.write('</div>')\n\n    # Feature importance chart\n  \
+          \  html_content.write('<div class=\"chart-container\">')\n    html_content.write('<div\
+          \ class=\"chart-title\">\U0001F31F Feature Importance</div>')\n\n    # Sort\
+          \ features by importance\n    sorted_features = sorted(feature_importance.items(),\
+          \ key=lambda x: x[1], reverse=True)\n    feature_names, importances = zip(*sorted_features)\n\
+          \n    fig_importance = go.Figure(go.Bar(\n        x=list(importances),\n\
+          \        y=list(feature_names),\n        orientation='h',\n        marker_color='rgba(102,\
+          \ 126, 234, 0.8)',\n        text=[f'{imp:.3f}' for imp in importances],\n\
+          \        textposition='outside'\n    ))\n    fig_importance.update_layout(\n\
+          \        title=None,\n        xaxis_title='Importance Score',\n        yaxis_title='Features',\n\
+          \        height=300,\n        margin=dict(l=150, r=50, t=50, b=50)\n   \
+          \ )\n\n    html_content.write(fig_importance.to_html(div_id=\"feature-importance\"\
+          , include_plotlyjs=False))\n    html_content.write('</div>')\n\n    # Classification\
+          \ report details\n    html_content.write('<div class=\"chart-container\"\
+          >')\n    html_content.write('<div class=\"chart-title\">\U0001F4CB Detailed\
+          \ Classification Report</div>')\n\n    # Create per-class metrics visualization\n\
+          \    classes = [cls for cls in report.keys() if cls not in ['accuracy',\
+          \ 'macro avg', 'weighted avg']]\n    metrics_names = ['precision', 'recall',\
+          \ 'f1-score']\n\n    fig_report = make_subplots(\n        rows=1, cols=3,\n\
+          \        subplot_titles=('Precision', 'Recall', 'F1-Score'),\n        specs=[[{\"\
+          type\": \"bar\"}, {\"type\": \"bar\"}, {\"type\": \"bar\"}]]\n    )\n\n\
+          \    colors = ['#667eea', '#764ba2', '#f093fb']\n\n    for i, metric in\
+          \ enumerate(metrics_names):\n        values = [report[cls][metric] for cls\
+          \ in classes]\n        fig_report.add_trace(\n            go.Bar(x=classes,\
+          \ y=values, name=metric.title(), \n                  marker_color=colors[i],\
+          \ text=[f'{v:.3f}' for v in values],\n                  textposition='outside'),\n\
+          \            row=1, col=i+1\n        )\n\n    fig_report.update_layout(\n\
+          \        height=400,\n        showlegend=False,\n        title=None,\n \
+          \       margin=dict(l=50, r=50, t=80, b=50)\n    )\n\n    html_content.write(fig_report.to_html(div_id=\"\
+          classification-report\", include_plotlyjs=False))\n    html_content.write('</div>')\n\
+          \n    # Model info section\n    html_content.write(f\"\"\"\n        <div\
+          \ class=\"chart-container\">\n            <div class=\"chart-title\">\U0001F527\
+          \ Model Information</div>\n            <div class=\"feature-grid\">\n  \
+          \              <div class=\"feature-item\">\n                    <strong>Model\
+          \ Type:</strong> Random Forest Classifier\n                </div>\n    \
+          \            <div class=\"feature-item\">\n                    <strong>Training\
+          \ Samples:</strong> {len(X_train)}\n                </div>\n           \
+          \     <div class=\"feature-item\">\n                    <strong>Test Samples:</strong>\
+          \ {len(X_test)}\n                </div>\n                <div class=\"feature-item\"\
+          >\n                    <strong>Features:</strong> {len(feature_columns)}\n\
+          \                </div>\n                <div class=\"feature-item\">\n\
+          \                    <strong>Classes:</strong> {len(class_names)}\n    \
+          \            </div>\n                <div class=\"feature-item\">\n    \
+          \                <strong>Best Feature:</strong> {max(feature_importance,\
+          \ key=feature_importance.get)}\n                </div>\n            </div>\n\
+          \        </div>\n    \"\"\")\n\n    # Close HTML\n    html_content.write(\"\
+          \"\"\n        </div>\n    </body>\n    </html>\n    \"\"\")\n\n    # Save\
+          \ HTML dashboard\n    with open(performance_dashboard.path, 'w') as f:\n\
+          \        f.write(html_content.getvalue())\n\n    print(\"\u2705 Interactive\
+          \ dashboard created successfully!\")\n    print(f\"\U0001F4CA Dashboard\
+          \ saved to: {performance_dashboard.path}\")\n\n    # Also save full evaluation\
+          \ on complete dataset\n    y_full_pred = model.predict(X)\n    full_accuracy\
+          \ = accuracy_score(y, y_full_pred)\n    print(f\"\U0001F4C8 Full Dataset\
+          \ Accuracy: {full_accuracy:.4f}\")\n\n    return NamedTuple('EvaluationOutputs',\
+          \ [('final_accuracy', float), ('precision', float), ('recall', float), ('f1_score',\
+          \ float)])(\n        accuracy, precision, recall, f1\n    ) \n\n"
+        image: python:3.11.13
+    exec-load-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - load_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'joblib' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef load_data(dataset_url: str, output_dataset: dsl.Output[Dataset]):\n\
+          \    \"\"\"Load and prepare data from URL.\"\"\"\n    import pandas as pd\n\
+          \    import os\n\n    # Load data\n    df = pd.read_csv(dataset_url)\n\n\
+          \    # Basic cleaning\n    df = df.dropna()\n\n    print(f\"Loaded {len(df)}\
+          \ samples with {len(df.columns)} features\")\n    print(f\"Columns: {list(df.columns)}\"\
+          )\n\n    # Save to output artifact\n    df.to_csv(output_dataset.path, index=False)\n\
+          \n    # Add metadata\n    output_dataset.metadata = {\n        \"num_rows\"\
+          : len(df),\n        \"num_columns\": len(df.columns),\n        \"columns\"\
+          : list(df.columns)\n    }\n\n"
+        image: python:3.11.13
+    exec-train-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'joblib' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_model(\n    input_dataset: dsl.Input[Dataset], \n    model_output:\
+          \ dsl.Output[Model]\n) -> NamedTuple('ModelOutputs', [('training_accuracy',\
+          \ float), ('feature_count', int)]):\n    import pandas as pd\n    from sklearn.model_selection\
+          \ import train_test_split\n    from sklearn.ensemble import RandomForestClassifier\n\
+          \    from sklearn.metrics import accuracy_score\n    import joblib\n\n \
+          \   # Load data from input artifact\n    df = pd.read_csv(input_dataset.path)\n\
+          \n    # Prepare features and target (assuming Iris dataset structure)\n\
+          \    feature_columns = ['sepal_length', 'sepal_width', 'petal_length', 'petal_width']\n\
+          \    X = df[feature_columns]\n    y = df['species']\n\n    print(f\"Training\
+          \ with {len(df)} samples\")\n    print(f\"Features: {feature_columns}\"\
+          )\n    print(f\"Classes: {y.unique()}\")\n\n    # Split data\n    X_train,\
+          \ X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)\n\
+          \n    # Train model\n    model = RandomForestClassifier(n_estimators=100,\
+          \ random_state=42)\n    model.fit(X_train, y_train)\n\n    # Calculate training\
+          \ accuracy\n    y_pred = model.predict(X_test)\n    accuracy = accuracy_score(y_test,\
+          \ y_pred)\n\n    print(f\"Training completed. Accuracy: {accuracy:.4f}\"\
+          )\n\n    # Save model to output artifact\n    joblib.dump(model, model_output.path)\n\
+          \n    # Add model metadata\n    model_output.metadata = {\n        \"accuracy\"\
+          : accuracy,\n        \"n_estimators\": 100,\n        \"feature_count\":\
+          \ len(feature_columns),\n        \"training_samples\": len(X_train),\n \
+          \       \"test_samples\": len(X_test)\n    }\n\n    return NamedTuple('ModelOutputs',\
+          \ [('training_accuracy', float), ('feature_count', int)])(accuracy, len(feature_columns))\n\
+          \n"
+        image: python:3.11.13
+pipelineInfo:
+  description: A machine learning pipeline that trains and stores a model on the Iris
+    dataset
+  name: ml-training-pipeline
+root:
+  dag:
+    tasks:
+      evaluate-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-evaluate-model
+        dependentTasks:
+        - load-data
+        - train-model
+        inputs:
+          artifacts:
+            model_input:
+              taskOutputArtifact:
+                outputArtifactKey: model_output
+                producerTask: train-model
+            test_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: output_dataset
+                producerTask: load-data
+        taskInfo:
+          name: evaluate-model
+      load-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-load-data
+        inputs:
+          parameters:
+            dataset_url:
+              componentInputParameter: dataset_url
+        taskInfo:
+          name: load-data
+      train-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-model
+        dependentTasks:
+        - load-data
+        inputs:
+          artifacts:
+            input_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: output_dataset
+                producerTask: load-data
+        taskInfo:
+          name: train-model
+  inputDefinitions:
+    parameters:
+      dataset_url:
+        defaultValue: https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.13.0
