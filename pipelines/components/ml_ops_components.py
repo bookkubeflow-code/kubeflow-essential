@@ -3,7 +3,7 @@ from kfp.dsl import Dataset, Model, HTML, Metrics
 from typing import NamedTuple
 
 @dsl.component(
-    base_image="python:3.11.13",
+    base_image="python:3.9",
     packages_to_install=["pandas", "scikit-learn", "joblib"]
 )
 def load_data(dataset_url: str, output_dataset: dsl.Output[Dataset]):
@@ -31,7 +31,7 @@ def load_data(dataset_url: str, output_dataset: dsl.Output[Dataset]):
     }
 
 @dsl.component(
-    base_image="python:3.11.13",
+    base_image="python:3.9",
     packages_to_install=["pandas", "scikit-learn", "joblib"]
 )
 def train_model(
@@ -84,7 +84,7 @@ def train_model(
     return NamedTuple('ModelOutputs', [('training_accuracy', float), ('feature_count', int)])(accuracy, len(feature_columns))
 
 @dsl.component(
-    base_image="python:3.11.13",
+    base_image="python:3.9",
     packages_to_install=[
         "pandas", 
         "scikit-learn", 

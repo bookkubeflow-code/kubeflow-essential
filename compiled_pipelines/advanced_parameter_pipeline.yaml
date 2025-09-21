@@ -1,0 +1,351 @@
+# PIPELINE DEFINITION
+# Name: advanced-parameter-management-demo
+# Description: Comprehensive parameter management demonstration covering all concepts
+# Inputs:
+#    dataset_name: str
+#    enable_validation: bool [Default: True]
+#    model_approach: str [Default: 'simple']
+#    random_seed: int [Default: 42.0]
+#    train_split: float [Default: 0.8]
+components:
+  comp-data-processing-component:
+    executorLabel: exec-data-processing-component
+    inputDefinitions:
+      parameters:
+        config_result:
+          parameterType: STRING
+        dataset_name:
+          parameterType: STRING
+        validation_result:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        output_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        Output:
+          parameterType: STRING
+  comp-environment-config-component:
+    executorLabel: exec-environment-config-component
+    inputDefinitions:
+      parameters:
+        model_approach:
+          parameterType: STRING
+        random_seed:
+          parameterType: NUMBER_INTEGER
+    outputDefinitions:
+      artifacts:
+        config_output:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-model-training-component:
+    executorLabel: exec-model-training-component
+    inputDefinitions:
+      artifacts:
+        config_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        processed_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+  comp-validate-parameters-component:
+    executorLabel: exec-validate-parameters-component
+    inputDefinitions:
+      parameters:
+        dataset_name:
+          parameterType: STRING
+        enable_validation:
+          parameterType: BOOLEAN
+        train_split:
+          parameterType: NUMBER_DOUBLE
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-data-processing-component:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - data_processing_component
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' &&\
+          \ \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef data_processing_component(\n    dataset_name: str,\n    validation_result:\
+          \ str,\n    config_result: str,\n    output_dataset: dsl.Output[Dataset]\n\
+          ) -> str:\n    \"\"\"Component 3: Demonstrates computed parameters and parameter\
+          \ flow.\"\"\"\n    import pandas as pd\n\n    print(\"COMPONENT 3: DATA\
+          \ PROCESSING\")\n    print(\"=\"*40)\n    print(f\"Received validation:\
+          \ {validation_result}\")\n    print(f\"Received config: {config_result}\"\
+          )\n\n    # Extract parameters from previous components\n    train_split\
+          \ = float(validation_result.split('_')[-1])\n    test_split = 1.0 - train_split\
+          \  # Computed parameter\n\n    print(f\"Computed test_split: {test_split}\
+          \ (from train_split: {train_split})\")\n\n    # Load and process data\n\
+          \    dataset_url = \"https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv\"\
+          \n    df = pd.read_csv(dataset_url)\n\n    # Add computed metadata\n   \
+          \ df['train_split'] = train_split\n    df['test_split'] = test_split\n \
+          \   df['dataset_source'] = dataset_name\n\n    df.to_csv(output_dataset.path,\
+          \ index=False)\n\n    print(f\"Processed {len(df)} records with computed\
+          \ parameters\")\n\n    return f\"processed_{dataset_name}_{len(df)}\"\n\n"
+        image: python:3.9
+    exec-environment-config-component:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - environment_config_component
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' &&\
+          \ \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef environment_config_component(\n    model_approach: str,\n   \
+          \ random_seed: int,\n    config_output: dsl.Output[Dataset]\n):\n    \"\"\
+          \"Component 2: Demonstrates environment-aware parameter resolution.\"\"\"\
+          \n    import pandas as pd\n    import os\n    import json\n\n    print(\"\
+          COMPONENT 2: ENVIRONMENT CONFIGURATION\")\n    print(\"=\"*40)\n\n    #\
+          \ Environment-aware parameter resolution\n    environment = os.getenv(\"\
+          PIPELINE_ENV\", \"development\")\n\n    # Dynamic parameter resolution based\
+          \ on environment\n    if environment == \"production\":\n        batch_size\
+          \ = int(os.getenv(\"BATCH_SIZE\", \"64\"))\n        cache_enabled = True\n\
+          \        sample_size = None\n    else:\n        batch_size = int(os.getenv(\"\
+          BATCH_SIZE\", \"32\"))\n        cache_enabled = False\n        sample_size\
+          \ = 1000\n\n    config = {\n        \"model_approach\": model_approach,\n\
+          \        \"random_seed\": random_seed,\n        \"environment\": environment,\n\
+          \        \"batch_size\": batch_size,\n        \"cache_enabled\": cache_enabled,\n\
+          \        \"sample_size\": sample_size\n    }\n\n    print(f\"Environment:\
+          \ {environment}\")\n    print(f\"Dynamic config: {config}\")\n\n    # Save\
+          \ config as artifact\n    config_df = pd.DataFrame([config])\n    config_df.to_csv(config_output.path,\
+          \ index=False)\n\n    print(f\"Configuration completed for {environment}\
+          \ environment\")\n\n"
+        image: python:3.9
+    exec-model-training-component:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - model_training_component
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' &&\
+          \ \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef model_training_component(\n    processed_data: dsl.Input[Dataset],\n\
+          \    config_data: dsl.Input[Dataset]\n) -> str:\n    \"\"\"Component 4:\
+          \ Demonstrates parameter evolution and backwards compatibility.\"\"\"\n\
+          \    import pandas as pd\n\n    print(\"COMPONENT 4: MODEL TRAINING\")\n\
+          \    print(\"=\"*40)\n\n    # Load data from previous components\n    data_df\
+          \ = pd.read_csv(processed_data.path)\n    config_df = pd.read_csv(config_data.path)\n\
+          \n    # Parameter evolution demonstration\n    print(\"PARAMETER EVOLUTION:\"\
+          )\n    print(\"v1.0: Basic parameters (dataset_name, model_type)\")\n  \
+          \  print(\"v1.5: Added training parameters (train_split)\")\n    print(\"\
+          v2.0: Added environment awareness (batch_size, cache_enabled)\")\n\n   \
+          \ # Backwards compatibility\n    legacy_model_type = config_df['model_approach'].iloc[0]\n\
+          \    if legacy_model_type == \"simple\":\n        new_model_type = \"random_forest\"\
+          \  # Migration\n    else:\n        new_model_type = legacy_model_type\n\n\
+          \    print(f\"Backwards compatibility: '{legacy_model_type}' -> '{new_model_type}'\"\
+          )\n\n    # Use parameters from pipeline flow\n    batch_size = config_df['batch_size'].iloc[0]\n\
+          \    random_seed = config_df['random_seed'].iloc[0]\n\n    print(f\"Training\
+          \ with batch_size={batch_size}, random_seed={random_seed}\")\n    print(f\"\
+          Dataset shape: {data_df.shape}\")\n\n    return f\"trained_{new_model_type}_{batch_size}\"\
+          \n\n"
+        image: python:3.9
+    exec-validate-parameters-component:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - validate_parameters_component
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef validate_parameters_component(\n    dataset_name: str,\n    train_split:\
+          \ float,\n    enable_validation: bool\n) -> str:\n    \"\"\"Component 1:\
+          \ Demonstrates required parameter validation and fail-fast approach.\"\"\
+          \"\n\n    print(\"COMPONENT 1: PARAMETER VALIDATION\")\n    print(\"=\"\
+          *40)\n    print(f\"Required parameter: dataset_name = '{dataset_name}'\"\
+          )\n    print(f\"Common parameter: train_split = {train_split}\")\n    print(f\"\
+          Advanced parameter: enable_validation = {enable_validation}\")\n\n    #\
+          \ Fail-fast validation\n    if enable_validation:\n        if not (0.1 <=\
+          \ train_split <= 0.9):\n            raise ValueError(f\"train_split must\
+          \ be 0.1-0.9, got {train_split}\")\n        print(\"\u2713 Validation passed\"\
+          )\n    else:\n        print(\"\u26A0 Validation skipped\")\n\n    return\
+          \ f\"validated_{dataset_name}_{train_split}\"\n\n"
+        image: python:3.9
+pipelineInfo:
+  description: Comprehensive parameter management demonstration covering all concepts
+  name: advanced-parameter-management-demo
+root:
+  dag:
+    tasks:
+      data-processing-component:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-data-processing-component
+        dependentTasks:
+        - environment-config-component
+        - validate-parameters-component
+        inputs:
+          parameters:
+            config_result:
+              runtimeValue:
+                constant: config_completed
+            dataset_name:
+              componentInputParameter: dataset_name
+            validation_result:
+              taskOutputParameter:
+                outputParameterKey: Output
+                producerTask: validate-parameters-component
+        taskInfo:
+          name: data-processing-component
+      environment-config-component:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-environment-config-component
+        dependentTasks:
+        - validate-parameters-component
+        inputs:
+          parameters:
+            model_approach:
+              componentInputParameter: model_approach
+            random_seed:
+              componentInputParameter: random_seed
+        taskInfo:
+          name: environment-config-component
+      model-training-component:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-model-training-component
+        dependentTasks:
+        - data-processing-component
+        - environment-config-component
+        inputs:
+          artifacts:
+            config_data:
+              taskOutputArtifact:
+                outputArtifactKey: config_output
+                producerTask: environment-config-component
+            processed_data:
+              taskOutputArtifact:
+                outputArtifactKey: output_dataset
+                producerTask: data-processing-component
+        taskInfo:
+          name: model-training-component
+      validate-parameters-component:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-validate-parameters-component
+        inputs:
+          parameters:
+            dataset_name:
+              componentInputParameter: dataset_name
+            enable_validation:
+              componentInputParameter: enable_validation
+            train_split:
+              componentInputParameter: train_split
+        taskInfo:
+          name: validate-parameters-component
+  inputDefinitions:
+    parameters:
+      dataset_name:
+        parameterType: STRING
+      enable_validation:
+        defaultValue: true
+        isOptional: true
+        parameterType: BOOLEAN
+      model_approach:
+        defaultValue: simple
+        isOptional: true
+        parameterType: STRING
+      random_seed:
+        defaultValue: 42.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      train_split:
+        defaultValue: 0.8
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.13.0
