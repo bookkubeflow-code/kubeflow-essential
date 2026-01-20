@@ -148,8 +148,8 @@ Thumbs.db
 
 # Kubeflow specific
 kfp_env*/
-# compiled_pipelines/ - Include compiled pipelines in git
-# *.yaml - Include YAML files in git for pipeline definitions
+kfp-env/
+compiled_pipelines/
 !kubeflow.env.example
 manifests/
 runs/ 
