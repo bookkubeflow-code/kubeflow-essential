@@ -1,0 +1,11 @@
+# Katib Example - Python Dependencies
+# Training dependencies for scikit-learn based hyperparameter tuning
+
+# Core ML libraries
+scikit-learn==1.4.0
+numpy==1.26.3
+pandas==2.1.4
+
+# For reproducibility
+joblib==1.3.2
+

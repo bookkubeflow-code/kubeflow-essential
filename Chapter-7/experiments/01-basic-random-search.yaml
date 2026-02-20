@@ -1,0 +1,246 @@
+# =============================================================================
+# Experiment 01: Basic Random Search
+# =============================================================================
+# This is the simplest Katib experiment configuration demonstrating:
+# - Random search algorithm
+# - Multiple hyperparameter types (int, double, categorical)
+# - StdOut metrics collector
+# - Basic trial template with Kubernetes Job
+#
+# Use Case: Quick exploration of hyperparameter space
+# Recommended When: Starting optimization, establishing baselines
+# =============================================================================
+
+apiVersion: kubeflow.org/v1beta1
+kind: Experiment
+metadata:
+  # Experiment name - must be unique within the namespace
+  # Use descriptive names that indicate the model and algorithm
+  name: sklearn-random-search
+  namespace: kubeflow-user-example-com
+spec:
+  # ===========================================================================
+  # OBJECTIVE CONFIGURATION
+  # ===========================================================================
+  # Defines what metric to optimize and the optimization direction.
+  # This is the "what" of your optimization problem.
+  objective:
+    # Type: "maximize" or "minimize"
+    # Use "maximize" for accuracy, F1-score, AUC
+    # Use "minimize" for loss, error rate, perplexity
+    type: maximize
+    
+    # Goal: Stop the experiment when this value is reached (optional)
+    # Setting a goal prevents wasted computation once requirements are met
+    goal: 0.98
+    
+    # Primary metric to optimize
+    # MUST match exactly what your training script logs: print(f"accuracy={value}")
+    objectiveMetricName: accuracy
+    
+    # Additional metrics to track (not optimized, but recorded)
+    # Useful for analyzing trade-offs and understanding model behavior
+    additionalMetricNames:
+      - f1_score
+      - precision
+      - recall
+      - auc
+      - cv_accuracy
+
+  # ===========================================================================
+  # ALGORITHM CONFIGURATION
+  # ===========================================================================
+  # Defines HOW to search the hyperparameter space.
+  # Random search samples independently from parameter distributions.
+  algorithm:
+    algorithmName: random
+    # Random search has minimal configuration
+    # Optional settings:
+    algorithmSettings:
+      - name: "random_state"
+        value: "42"  # For reproducibility
+
+  # ===========================================================================
+  # TRIAL LIMITS AND PARALLELISM
+  # ===========================================================================
+  # Controls the computational budget and resource utilization.
+  
+  # Maximum number of trials to run
+  # Higher values = more thorough search but higher cost
+  maxTrialCount: 20
+  
+  # Number of trials to run simultaneously
+  # Set based on cluster capacity: (available_nodes * trials_per_node)
+  # Higher parallelism = faster completion but more resources at once
+  parallelTrialCount: 3
+  
+  # Maximum failed trials before stopping the experiment
+  # Prevents runaway failures from consuming resources
+  maxFailedTrialCount: 10
+
+  # ===========================================================================
+  # SEARCH SPACE DEFINITION
+  # ===========================================================================
+  # Defines the hyperparameters to tune and their valid ranges.
+  # This is the "search space" - all possible configurations to explore.
+  parameters:
+    # -----------------------------------------------------------------
+    # INTEGER PARAMETERS
+    # -----------------------------------------------------------------
+    # Use for: layer counts, batch sizes, epochs, tree counts
+    
+    - name: n-estimators
+      parameterType: int
+      feasibleSpace:
+        # Number of trees in the forest
+        # More trees generally improve performance but increase training time
+        min: "50"
+        max: "300"
+    
+    - name: max-depth
+      parameterType: int
+      feasibleSpace:
+        # Maximum tree depth (0 = unlimited)
+        # Deeper trees can capture more complex patterns but may overfit
+        min: "3"
+        max: "20"
+    
+    - name: min-samples-split
+      parameterType: int
+      feasibleSpace:
+        # Minimum samples required to split a node
+        # Higher values prevent overfitting on noisy data
+        min: "2"
+        max: "20"
+    
+    - name: min-samples-leaf
+      parameterType: int
+      feasibleSpace:
+        # Minimum samples required at leaf nodes
+        # Acts as regularization
+        min: "1"
+        max: "10"
+
+    # -----------------------------------------------------------------
+    # DOUBLE/FLOAT PARAMETERS
+    # -----------------------------------------------------------------
+    # Use for: learning rates, dropout, regularization coefficients
+    
+    - name: max-features-ratio
+      parameterType: double
+      feasibleSpace:
+        # Fraction of features to consider for each split
+        # Lower values add randomness and reduce overfitting
+        min: "0.1"
+        max: "1.0"
+
+    # -----------------------------------------------------------------
+    # CATEGORICAL PARAMETERS
+    # -----------------------------------------------------------------
+    # Use for: optimizer types, activation functions, model variants
+    
+    - name: criterion
+      parameterType: categorical
+      feasibleSpace:
+        # Split quality criterion
+        list:
+          - "gini"       # Gini impurity (default)
+          - "entropy"    # Information gain
+          - "log_loss"   # Log loss / cross-entropy
+    
+    - name: bootstrap
+      parameterType: categorical
+      feasibleSpace:
+        # Whether to use bootstrap samples
+        list:
+          - "true"   # Bootstrap samples (default)
+          - "false"  # Use entire dataset for each tree
+
+  # ===========================================================================
+  # METRICS COLLECTOR CONFIGURATION
+  # ===========================================================================
+  # Defines HOW Katib extracts metrics from training output.
+  # StdOut collector parses stdout for metric patterns.
+  metricsCollectorSpec:
+    collector:
+      # StdOut: Parse metrics from stdout (simplest approach)
+      # Alternatives: File, TensorFlowEvent, PrometheusMetric, Custom
+      kind: StdOut
+
+  # ===========================================================================
+  # TRIAL TEMPLATE
+  # ===========================================================================
+  # Defines the Kubernetes workload to run for each trial.
+  # This is where hyperparameters are injected into your training code.
+  trialTemplate:
+    # Name of the container to monitor for metrics
+    primaryContainerName: training-container
+    
+    # Parameter mapping: Experiment parameters -> Trial template variables
+    # Reference names are converted to camelCase for template substitution
+    trialParameters:
+      - name: nEstimators
+        reference: n-estimators
+      - name: maxDepth
+        reference: max-depth
+      - name: minSamplesSplit
+        reference: min-samples-split
+      - name: minSamplesLeaf
+        reference: min-samples-leaf
+      - name: maxFeaturesRatio
+        reference: max-features-ratio
+      - name: criterion
+        reference: criterion
+      - name: bootstrap
+        reference: bootstrap
+
+    # Trial workload specification (Kubernetes Job)
+    trialSpec:
+      apiVersion: batch/v1
+      kind: Job
+      spec:
+        template:
+          metadata:
+            # Labels for pod identification and metrics collection
+            labels:
+              app: katib-trial
+            annotations:
+              sidecar.istio.io/inject: "false"
+          spec:
+            containers:
+              - name: training-container
+                # =================================================
+                # IMPORTANT: Replace with your actual image registry
+                # =================================================
+                image: katib-sklearn-example:v1.0
+                imagePullPolicy: Never
+                
+                # Resource requests and limits
+                # Adjust based on your model's requirements
+                resources:
+                  requests:
+                    memory: "512Mi"
+                    cpu: "500m"
+                  limits:
+                    memory: "1Gi"
+                    cpu: "1000m"
+                
+                # Command to run training with injected hyperparameters
+                # ${trialParameters.X} substitutes the suggested values
+                command:
+                  - "python"
+                  - "/app/train.py"
+                  - "--n-estimators=${trialParameters.nEstimators}"
+                  - "--max-depth=${trialParameters.maxDepth}"
+                  - "--min-samples-split=${trialParameters.minSamplesSplit}"
+                  - "--min-samples-leaf=${trialParameters.minSamplesLeaf}"
+                  - "--max-features-ratio=${trialParameters.maxFeaturesRatio}"
+                  - "--criterion=${trialParameters.criterion}"
+                  - "--bootstrap=${trialParameters.bootstrap}"
+                  - "--model-type=random_forest"
+                  - "--num-epochs=5"
+                  - "--cv-folds=5"
+            
+            # Never restart failed trials (let Katib handle failures)
+            restartPolicy: Never
+

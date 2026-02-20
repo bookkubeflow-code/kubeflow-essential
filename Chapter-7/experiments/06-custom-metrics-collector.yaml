@@ -1,0 +1,210 @@
+# =============================================================================
+# Experiment 06: Custom Metrics Collector
+# =============================================================================
+# Demonstrates advanced metrics collection configurations including:
+# - Custom regex patterns for non-standard log formats
+# - File-based metrics collection
+# - Additional metric filters
+#
+# Metrics Collection Methods in Katib:
+# 1. StdOut: Parse metrics from stdout (simplest)
+# 2. File: Read metrics from a file written by training script
+# 3. TensorFlowEvent: Parse TensorFlow event files (TensorBoard logs)
+# 4. PrometheusMetric: Pull metrics from Prometheus endpoints
+# 5. Custom: Implement your own metrics collector
+#
+# Use Case: Non-standard logging formats, specialized metric sources
+# Recommended When: Training framework has specific logging patterns
+# =============================================================================
+
+apiVersion: kubeflow.org/v1beta1
+kind: Experiment
+metadata:
+  name: sklearn-custom-metrics
+  namespace: kubeflow-user-example-com
+spec:
+  # ===========================================================================
+  # OBJECTIVE
+  # ===========================================================================
+  objective:
+    type: maximize
+    goal: 0.97
+    objectiveMetricName: accuracy
+    additionalMetricNames:
+      - f1_score
+      - precision
+      - recall
+
+  # ===========================================================================
+  # ALGORITHM
+  # ===========================================================================
+  algorithm:
+    algorithmName: random
+
+  # ===========================================================================
+  # TRIAL LIMITS
+  # ===========================================================================
+  maxTrialCount: 15
+  parallelTrialCount: 3
+  maxFailedTrialCount: 3
+
+  # ===========================================================================
+  # SEARCH SPACE
+  # ===========================================================================
+  parameters:
+    - name: n-estimators
+      parameterType: int
+      feasibleSpace:
+        min: "50"
+        max: "200"
+    
+    - name: max-depth
+      parameterType: int
+      feasibleSpace:
+        min: "3"
+        max: "15"
+    
+    - name: criterion
+      parameterType: categorical
+      feasibleSpace:
+        list:
+          - "gini"
+          - "entropy"
+
+  # ===========================================================================
+  # METRICS COLLECTOR: StdOut Configuration
+  # ===========================================================================
+  # Using default StdOut collector which parses metric_name=value format.
+  # For custom patterns, you can add metricsFormat under source.filter
+  metricsCollectorSpec:
+    collector:
+      kind: StdOut
+
+  # ===========================================================================
+  # TRIAL TEMPLATE
+  # ===========================================================================
+  trialTemplate:
+    primaryContainerName: training-container
+    trialParameters:
+      - name: nEstimators
+        reference: n-estimators
+      - name: maxDepth
+        reference: max-depth
+      - name: criterion
+        reference: criterion
+    trialSpec:
+      apiVersion: batch/v1
+      kind: Job
+      spec:
+        template:
+          metadata:
+            annotations:
+              sidecar.istio.io/inject: "false"
+          spec:
+            containers:
+              - name: training-container
+                image: katib-sklearn-example:v1.0
+                imagePullPolicy: Never
+                resources:
+                  requests:
+                    memory: "512Mi"
+                    cpu: "500m"
+                  limits:
+                    memory: "1Gi"
+                    cpu: "1000m"
+                command:
+                  - "python"
+                  - "/app/train.py"
+                  - "--n-estimators=${trialParameters.nEstimators}"
+                  - "--max-depth=${trialParameters.maxDepth}"
+                  - "--criterion=${trialParameters.criterion}"
+                  - "--model-type=random_forest"
+                  - "--num-epochs=5"
+            restartPolicy: Never
+
+---
+# =============================================================================
+# ALTERNATIVE: File-based Metrics Collection
+# =============================================================================
+# This separate experiment demonstrates file-based metrics collection.
+# Training script writes metrics to a file instead of stdout.
+#
+# Training Script Example:
+#   with open('/var/log/katib/metrics.log', 'a') as f:
+#       f.write(f"accuracy={accuracy}\n")
+#       f.write(f"f1_score={f1}\n")
+
+apiVersion: kubeflow.org/v1beta1
+kind: Experiment
+metadata:
+  name: sklearn-file-metrics
+  namespace: kubeflow-user-example-com
+spec:
+  objective:
+    type: maximize
+    goal: 0.97
+    objectiveMetricName: accuracy
+    additionalMetricNames:
+      - f1_score
+
+  algorithm:
+    algorithmName: random
+
+  maxTrialCount: 10
+  parallelTrialCount: 2
+  maxFailedTrialCount: 2
+
+  parameters:
+    - name: n-estimators
+      parameterType: int
+      feasibleSpace:
+        min: "50"
+        max: "200"
+    
+    - name: max-depth
+      parameterType: int
+      feasibleSpace:
+        min: "3"
+        max: "15"
+
+  # ===========================================================================
+  # METRICS COLLECTOR: StdOut (same as first experiment)
+  # ===========================================================================
+  # Note: For File-based collection, you would need a training script that
+  # writes metrics to /var/log/katib/metrics.log. Example:
+  #   with open('/var/log/katib/metrics.log', 'a') as f:
+  #       f.write(f"accuracy={accuracy}\n")
+  metricsCollectorSpec:
+    collector:
+      kind: StdOut
+
+  trialTemplate:
+    primaryContainerName: training-container
+    trialParameters:
+      - name: nEstimators
+        reference: n-estimators
+      - name: maxDepth
+        reference: max-depth
+    trialSpec:
+      apiVersion: batch/v1
+      kind: Job
+      spec:
+        template:
+          metadata:
+            annotations:
+              sidecar.istio.io/inject: "false"
+          spec:
+            containers:
+              - name: training-container
+                image: katib-sklearn-example:v1.0
+                imagePullPolicy: Never
+                # Note: Katib automatically injects volume mount for /var/log/katib
+                command:
+                  - "python"
+                  - "/app/train.py"
+                  - "--n-estimators=${trialParameters.nEstimators}"
+                  - "--max-depth=${trialParameters.maxDepth}"
+                  - "--model-type=random_forest"
+                  - "--num-epochs=5"
+            restartPolicy: Never
+

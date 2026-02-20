@@ -1,0 +1,251 @@
+# PIPELINE DEFINITION
+# Name: ml-training-pipeline
+# Description: A machine learning pipeline that trains and stores a model on the Iris dataset
+# Inputs:
+#    dataset_url: str [Default: 'https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv']
+components:
+  comp-evaluate-model:
+    executorLabel: exec-evaluate-model
+    inputDefinitions:
+      artifacts:
+        model_input:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+        test_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      parameters:
+        classification_report:
+          parameterType: STRING
+        final_accuracy:
+          parameterType: NUMBER_DOUBLE
+  comp-load-data:
+    executorLabel: exec-load-data
+    inputDefinitions:
+      parameters:
+        dataset_url:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        output_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-train-model:
+    executorLabel: exec-train-model
+    inputDefinitions:
+      artifacts:
+        input_dataset:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        model_output:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+      parameters:
+        accuracy:
+          parameterType: NUMBER_DOUBLE
+deploymentSpec:
+  executors:
+    exec-evaluate-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - evaluate_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'joblib' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef evaluate_model(\n    test_dataset: dsl.Input[Dataset], \n   \
+          \ model_input: dsl.Input[Model]\n) -> NamedTuple('Outputs', [('final_accuracy',\
+          \ float), ('classification_report', str)]):\n    import pandas as pd\n \
+          \   from sklearn.model_selection import train_test_split\n    from sklearn.metrics\
+          \ import accuracy_score, classification_report\n    import joblib\n\n  \
+          \  # Load data from input artifact\n    df = pd.read_csv(test_dataset.path)\n\
+          \n    # Prepare features and target\n    feature_columns = ['sepal_length',\
+          \ 'sepal_width', 'petal_length', 'petal_width']\n    X = df[feature_columns]\n\
+          \    y = df['species']\n\n    print(f\"Evaluating with {len(df)} samples\"\
+          )\n    print(f\"Features: {feature_columns}\")\n\n    # Split data (same\
+          \ split as training for consistency)\n    X_train, X_test, y_train, y_test\
+          \ = train_test_split(X, y, test_size=0.2, random_state=42)\n\n    # Load\
+          \ saved model from input artifact\n    model = joblib.load(model_input.path)\n\
+          \n    # Make predictions on test set\n    y_pred = model.predict(X_test)\n\
+          \n    # Calculate metrics\n    accuracy = accuracy_score(y_test, y_pred)\n\
+          \    report = classification_report(y_test, y_pred)\n\n    print(f\"Final\
+          \ Model Accuracy: {accuracy:.4f}\")\n    print(f\"Classification Report:\\\
+          n{report}\")\n\n    # Also evaluate on full dataset for completeness\n \
+          \   y_full_pred = model.predict(X)\n    full_accuracy = accuracy_score(y,\
+          \ y_full_pred)\n    print(f\"Full Dataset Accuracy: {full_accuracy:.4f}\"\
+          )\n\n    return (accuracy, report) \n\n"
+        image: python:3.9
+    exec-load-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - load_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'joblib' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef load_data(dataset_url: str, output_dataset: dsl.Output[Dataset]):\n\
+          \    import pandas as pd\n    import os\n\n    # Load the dataset\n    df\
+          \ = pd.read_csv(dataset_url)\n\n    # Basic data cleaning\n    df = df.dropna()\n\
+          \n    # Save the dataset to the output artifact path\n    df.to_csv(output_dataset.path,\
+          \ index=False)\n\n    print(f\"Dataset loaded and saved to {output_dataset.path}\"\
+          )\n    print(f\"Dataset shape: {df.shape}\")\n    print(f\"Columns: {list(df.columns)}\"\
+          )\n\n    # Set metadata\n    output_dataset.metadata = {\n        \"num_rows\"\
+          : len(df),\n        \"num_columns\": len(df.columns),\n        \"columns\"\
+          : list(df.columns)\n    }\n\n"
+        image: python:3.9
+    exec-train-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.13.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'joblib' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_model(\n    input_dataset: dsl.Input[Dataset], \n    model_output:\
+          \ dsl.Output[Model]\n) -> NamedTuple('Outputs', [('accuracy', float)]):\n\
+          \    import pandas as pd\n    from sklearn.model_selection import train_test_split\n\
+          \    from sklearn.linear_model import LogisticRegression\n    from sklearn.metrics\
+          \ import accuracy_score\n    import joblib\n    import os\n\n    # Load\
+          \ data from input artifact\n    df = pd.read_csv(input_dataset.path)\n\n\
+          \    # Prepare features and target\n    feature_columns = ['sepal_length',\
+          \ 'sepal_width', 'petal_length', 'petal_width']\n    X = df[feature_columns]\n\
+          \    y = df['species']\n\n    print(f\"Training with {len(df)} samples\"\
+          )\n    print(f\"Features: {feature_columns}\")\n    print(f\"Target classes:\
+          \ {y.unique()}\")\n\n    # Split data\n    X_train, X_test, y_train, y_test\
+          \ = train_test_split(X, y, test_size=0.2, random_state=42)\n\n    # Train\
+          \ model\n    model = LogisticRegression(random_state=42, max_iter=1000)\n\
+          \    model.fit(X_train, y_train)\n\n    # Calculate accuracy\n    y_pred\
+          \ = model.predict(X_test)\n    accuracy = accuracy_score(y_test, y_pred)\n\
+          \n    print(f\"Training completed. Accuracy: {accuracy:.4f}\")\n\n    #\
+          \ Save model to output artifact\n    joblib.dump(model, model_output.path)\n\
+          \n    # Set model metadata\n    model_output.metadata = {\n        \"accuracy\"\
+          : accuracy,\n        \"train_samples\": len(X_train),\n        \"test_samples\"\
+          : len(X_test),\n        \"features\": feature_columns,\n        \"model_type\"\
+          : \"LogisticRegression\"\n    }\n\n    return (accuracy,)\n\n"
+        image: python:3.9
+pipelineInfo:
+  description: A machine learning pipeline that trains and stores a model on the Iris
+    dataset
+  name: ml-training-pipeline
+root:
+  dag:
+    tasks:
+      evaluate-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-evaluate-model
+        dependentTasks:
+        - load-data
+        - train-model
+        inputs:
+          artifacts:
+            model_input:
+              taskOutputArtifact:
+                outputArtifactKey: model_output
+                producerTask: train-model
+            test_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: output_dataset
+                producerTask: load-data
+        taskInfo:
+          name: evaluate-model
+      load-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-load-data
+        inputs:
+          parameters:
+            dataset_url:
+              componentInputParameter: dataset_url
+        taskInfo:
+          name: load-data
+      train-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-model
+        dependentTasks:
+        - load-data
+        inputs:
+          artifacts:
+            input_dataset:
+              taskOutputArtifact:
+                outputArtifactKey: output_dataset
+                producerTask: load-data
+        taskInfo:
+          name: train-model
+  inputDefinitions:
+    parameters:
+      dataset_url:
+        defaultValue: https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv
+        isOptional: true
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.13.0

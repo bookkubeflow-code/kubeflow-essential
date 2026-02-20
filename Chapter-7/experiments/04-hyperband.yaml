@@ -1,0 +1,209 @@
+# =============================================================================
+# Experiment 04: Hyperband with Early Stopping
+# =============================================================================
+# Demonstrates resource-efficient hyperparameter tuning with dynamic 
+# resource allocation and aggressive early stopping.
+#
+# How Hyperband Works:
+# 1. Starts many configurations with minimal resources (epochs)
+# 2. Evaluates intermediate performance
+# 3. Eliminates worst-performing configurations
+# 4. Doubles resources for survivors
+# 5. Repeats until one configuration remains with maximum resources
+#
+# Key Concept: "Successive Halving"
+# - Start: 81 configs × 1 epoch each
+# - Round 1: Keep top 27 → 3 epochs each
+# - Round 2: Keep top 9 → 9 epochs each
+# - Round 3: Keep top 3 → 27 epochs each
+# - Final: Keep top 1 → 81 epochs
+#
+# Use Case: Iterative training where early performance predicts final
+# Recommended When: Training neural networks, gradient boosting, any
+#                   iterative algorithm where you can checkpoint
+# =============================================================================
+
+apiVersion: kubeflow.org/v1beta1
+kind: Experiment
+metadata:
+  name: sklearn-hyperband
+  namespace: kubeflow-user-example-com
+spec:
+  # ===========================================================================
+  # OBJECTIVE
+  # ===========================================================================
+  objective:
+    type: maximize
+    goal: 0.97
+    objectiveMetricName: accuracy
+    additionalMetricNames:
+      - f1_score
+      - cv_accuracy
+
+  # ===========================================================================
+  # ALGORITHM: Hyperband
+  # ===========================================================================
+  # Hyperband requires a "resource" parameter that controls training budget.
+  # The algorithm varies this resource to implement successive halving.
+  algorithm:
+    algorithmName: hyperband
+    algorithmSettings:
+      # Name of the resource parameter (must match a parameter below)
+      # This parameter controls "how long" each trial runs
+      - name: "resource_name"
+        value: "num-epochs"
+      
+      # Eta (η): Elimination rate
+      # After each round, keep top 1/η configurations
+      # η=3 means keep top 1/3, eliminate 2/3
+      # Higher η = more aggressive elimination, faster but riskier
+      - name: "eta"
+        value: "3"
+      
+      # r_l: Minimum resource allocation
+      # Lowest budget for initial trial evaluation
+      # Must be small relative to max resource for Hyperband to work well
+      # s_max = floor(log_eta(R/r_l)) determines number of brackets
+      - name: "r_l"
+        value: "1"
+
+  # ===========================================================================
+  # TRIAL LIMITS
+  # ===========================================================================
+  # IMPORTANT: Hyperband generates trials based on its algorithm
+  # parallelTrialCount determines batch size per bracket iteration
+  # Set maxTrialCount high enough or the experiment will hang
+  maxTrialCount: 9
+  parallelTrialCount: 9  # Must be >= n configurations in largest bracket
+  maxFailedTrialCount: 3
+
+  # ===========================================================================
+  # SEARCH SPACE
+  # ===========================================================================
+  parameters:
+    # -----------------------------------------------------------------
+    # RESOURCE PARAMETER (Required for Hyperband)
+    # -----------------------------------------------------------------
+    # This parameter MUST match the resource_name in algorithmSettings.
+    # Hyperband will dynamically set this value for each trial.
+    - name: num-epochs
+      parameterType: int
+      feasibleSpace:
+        # min should match r_l (minimum resource)
+        # max is the maximum resource - larger range = more brackets
+        # s_max = floor(log_3(27/1)) = 3 brackets
+        min: "1"
+        max: "27"
+    
+    # -----------------------------------------------------------------
+    # Standard Hyperparameters
+    # -----------------------------------------------------------------
+    - name: n-estimators
+      parameterType: int
+      feasibleSpace:
+        min: "50"
+        max: "250"
+    
+    - name: max-depth
+      parameterType: int
+      feasibleSpace:
+        min: "3"
+        max: "18"
+    
+    - name: min-samples-split
+      parameterType: int
+      feasibleSpace:
+        min: "2"
+        max: "15"
+    
+    - name: max-features-ratio
+      parameterType: double
+      feasibleSpace:
+        min: "0.2"
+        max: "0.9"
+    
+    - name: criterion
+      parameterType: categorical
+      feasibleSpace:
+        list:
+          - "gini"
+          - "entropy"
+
+  # ===========================================================================
+  # METRICS COLLECTOR
+  # ===========================================================================
+  # For Hyperband, intermediate metrics are CRITICAL.
+  # Training script must log metrics at each epoch:
+  #   print(f"epoch={epoch} validation-accuracy={acc}")
+  metricsCollectorSpec:
+    collector:
+      kind: StdOut
+
+  # ===========================================================================
+  # EARLY STOPPING (Optional Enhancement)
+  # ===========================================================================
+  # Hyperband has built-in early stopping via successive halving.
+  # You can add additional early stopping for extra efficiency.
+  earlyStopping:
+    # Median stopping: Kill trials performing worse than median at same step
+    algorithmName: medianstop
+    algorithmSettings:
+      # Minimum number of trials before early stopping kicks in
+      - name: "min_trials_required"
+        value: "3"
+      # Minimum steps (epochs) before evaluating for early stop
+      - name: "start_step"
+        value: "3"
+
+  # ===========================================================================
+  # TRIAL TEMPLATE
+  # ===========================================================================
+  trialTemplate:
+    primaryContainerName: training-container
+    trialParameters:
+      - name: numEpochs
+        reference: num-epochs
+      - name: nEstimators
+        reference: n-estimators
+      - name: maxDepth
+        reference: max-depth
+      - name: minSamplesSplit
+        reference: min-samples-split
+      - name: maxFeaturesRatio
+        reference: max-features-ratio
+      - name: criterion
+        reference: criterion
+    trialSpec:
+      apiVersion: batch/v1
+      kind: Job
+      spec:
+        template:
+          metadata:
+            annotations:
+              sidecar.istio.io/inject: "false"
+          spec:
+            containers:
+              - name: training-container
+                image: katib-sklearn-example:v1.0
+                imagePullPolicy: Never
+                resources:
+                  requests:
+                    memory: "512Mi"
+                    cpu: "500m"
+                  limits:
+                    memory: "1Gi"
+                    cpu: "1000m"
+                command:
+                  - "python"
+                  - "/app/train.py"
+                  # num-epochs is dynamically set by Hyperband
+                  - "--num-epochs=${trialParameters.numEpochs}"
+                  - "--n-estimators=${trialParameters.nEstimators}"
+                  - "--max-depth=${trialParameters.maxDepth}"
+                  - "--min-samples-split=${trialParameters.minSamplesSplit}"
+                  - "--max-features-ratio=${trialParameters.maxFeaturesRatio}"
+                  - "--criterion=${trialParameters.criterion}"
+                  - "--model-type=random_forest"
+                  - "--bootstrap=true"
+            restartPolicy: Never
+

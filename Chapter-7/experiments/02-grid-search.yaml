@@ -1,0 +1,154 @@
+# =============================================================================
+# Experiment 02: Grid Search
+# =============================================================================
+# Demonstrates exhaustive grid search over discrete parameter combinations.
+#
+# Key Differences from Random Search:
+# - Requires 'step' for integer/double parameters
+# - Evaluates ALL combinations systematically
+# - Guaranteed to find global optimum within the grid
+# - Can be expensive for large search spaces
+#
+# Use Case: Small search spaces, final refinement after random search
+# Recommended When: Number of combinations < 100
+# =============================================================================
+
+apiVersion: kubeflow.org/v1beta1
+kind: Experiment
+metadata:
+  name: sklearn-grid-search
+  namespace: kubeflow-user-example-com
+spec:
+  # ===========================================================================
+  # OBJECTIVE
+  # ===========================================================================
+  objective:
+    type: maximize
+    goal: 0.97
+    objectiveMetricName: accuracy
+    additionalMetricNames:
+      - f1_score
+      - cv_accuracy
+
+  # ===========================================================================
+  # ALGORITHM: Grid Search
+  # ===========================================================================
+  # Grid search systematically evaluates every combination.
+  # Total trials = product of (steps for each parameter)
+  #
+  # Example with this config:
+  # n_estimators: [50, 100, 150, 200] = 4 values
+  # max_depth: [5, 10, 15, 20] = 4 values
+  # criterion: [gini, entropy] = 2 values
+  # Total: 4 × 4 × 2 = 32 combinations
+  algorithm:
+    algorithmName: grid
+
+  # ===========================================================================
+  # TRIAL LIMITS
+  # ===========================================================================
+  # For grid search, maxTrialCount should accommodate all combinations
+  # Set it higher than your expected grid size
+  maxTrialCount: 50
+  parallelTrialCount: 4
+  maxFailedTrialCount: 5
+
+  # ===========================================================================
+  # SEARCH SPACE WITH STEP SIZES
+  # ===========================================================================
+  # Grid search REQUIRES step sizes to create discrete grid points.
+  parameters:
+    # Integer parameter with step
+    - name: n-estimators
+      parameterType: int
+      feasibleSpace:
+        min: "50"
+        max: "200"
+        step: "50"  # Creates: [50, 100, 150, 200]
+    
+    - name: max-depth
+      parameterType: int
+      feasibleSpace:
+        min: "5"
+        max: "20"
+        step: "5"   # Creates: [5, 10, 15, 20]
+    
+    - name: min-samples-split
+      parameterType: int
+      feasibleSpace:
+        min: "2"
+        max: "10"
+        step: "4"   # Creates: [2, 6, 10]
+
+    # Double parameter with step
+    - name: max-features-ratio
+      parameterType: double
+      feasibleSpace:
+        min: "0.3"
+        max: "0.9"
+        step: "0.3"  # Creates: [0.3, 0.6, 0.9]
+
+    # Categorical parameters naturally enumerate all values
+    - name: criterion
+      parameterType: categorical
+      feasibleSpace:
+        list:
+          - "gini"
+          - "entropy"
+
+  # ===========================================================================
+  # METRICS COLLECTOR
+  # ===========================================================================
+  metricsCollectorSpec:
+    collector:
+      kind: StdOut
+
+  # ===========================================================================
+  # TRIAL TEMPLATE
+  # ===========================================================================
+  trialTemplate:
+    primaryContainerName: training-container
+    trialParameters:
+      - name: nEstimators
+        reference: n-estimators
+      - name: maxDepth
+        reference: max-depth
+      - name: minSamplesSplit
+        reference: min-samples-split
+      - name: maxFeaturesRatio
+        reference: max-features-ratio
+      - name: criterion
+        reference: criterion
+    trialSpec:
+      apiVersion: batch/v1
+      kind: Job
+      spec:
+        template:
+          metadata:
+            annotations:
+              sidecar.istio.io/inject: "false"
+          spec:
+            containers:
+              - name: training-container
+                image: katib-sklearn-example:v1.0
+                imagePullPolicy: Never
+                resources:
+                  requests:
+                    memory: "512Mi"
+                    cpu: "500m"
+                  limits:
+                    memory: "1Gi"
+                    cpu: "1000m"
+                command:
+                  - "python"
+                  - "/app/train.py"
+                  - "--n-estimators=${trialParameters.nEstimators}"
+                  - "--max-depth=${trialParameters.maxDepth}"
+                  - "--min-samples-split=${trialParameters.minSamplesSplit}"
+                  - "--max-features-ratio=${trialParameters.maxFeaturesRatio}"
+                  - "--criterion=${trialParameters.criterion}"
+                  - "--model-type=random_forest"
+                  - "--bootstrap=true"
+                  - "--num-epochs=5"
+            restartPolicy: Never
+

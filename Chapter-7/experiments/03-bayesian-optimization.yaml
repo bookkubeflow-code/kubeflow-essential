@@ -1,0 +1,163 @@
+# =============================================================================
+# Experiment 03: Bayesian Optimization
+# =============================================================================
+# Demonstrates intelligent, model-based hyperparameter search.
+#
+# How It Works:
+# 1. Builds a probabilistic model (Gaussian Process) of the objective function
+# 2. Uses acquisition function to balance exploration vs exploitation
+# 3. Each trial informs subsequent parameter suggestions
+# 4. Converges faster than random search on smooth objective functions
+#
+# Key Characteristics:
+# - Sequential: Each trial depends on previous results
+# - Sample efficient: Finds good solutions with fewer trials
+# - Works best with continuous parameters and low dimensions (<15)
+#
+# Use Case: Expensive evaluations, continuous hyperparameters
+# Recommended When: Training is costly (GPU-hours) and search space is small
+# =============================================================================
+
+apiVersion: kubeflow.org/v1beta1
+kind: Experiment
+metadata:
+  name: sklearn-bayesian-optimization
+  namespace: kubeflow-user-example-com
+spec:
+  # ===========================================================================
+  # OBJECTIVE
+  # ===========================================================================
+  objective:
+    type: maximize
+    goal: 0.98
+    objectiveMetricName: accuracy
+    additionalMetricNames:
+      - f1_score
+      - auc
+
+  # ===========================================================================
+  # ALGORITHM: Bayesian Optimization
+  # ===========================================================================
+  # Uses Scikit-Optimize's Gaussian Process-based optimizer.
+  # Builds a surrogate model of the objective and uses it to guide search.
+  algorithm:
+    algorithmName: bayesianoptimization
+    algorithmSettings:
+      # Random seed for reproducibility
+      - name: "random_state"
+        value: "42"
+
+  # ===========================================================================
+  # TRIAL LIMITS
+  # ===========================================================================
+  # Bayesian optimization is inherently sequential, but can run limited
+  # parallel trials with care. Too much parallelism reduces algorithm benefit.
+  maxTrialCount: 25
+  parallelTrialCount: 2  # Keep low for BO - it's sequential by nature
+  maxFailedTrialCount: 3
+
+  # ===========================================================================
+  # SEARCH SPACE
+  # ===========================================================================
+  # Bayesian optimization works best with continuous parameters.
+  # Categorical parameters are one-hot encoded internally.
+  parameters:
+    # Continuous parameters are ideal for Bayesian optimization
+    - name: n-estimators
+      parameterType: int
+      feasibleSpace:
+        min: "50"
+        max: "300"
+    
+    - name: max-depth
+      parameterType: int
+      feasibleSpace:
+        min: "3"
+        max: "20"
+    
+    - name: min-samples-split
+      parameterType: int
+      feasibleSpace:
+        min: "2"
+        max: "15"
+    
+    - name: min-samples-leaf
+      parameterType: int
+      feasibleSpace:
+        min: "1"
+        max: "8"
+    
+    - name: max-features-ratio
+      parameterType: double
+      feasibleSpace:
+        min: "0.1"
+        max: "1.0"
+
+    # Categorical parameters work but add complexity to the GP model
+    - name: criterion
+      parameterType: categorical
+      feasibleSpace:
+        list:
+          - "gini"
+          - "entropy"
+          - "log_loss"
+
+  # ===========================================================================
+  # METRICS COLLECTOR
+  # ===========================================================================
+  metricsCollectorSpec:
+    collector:
+      kind: StdOut
+
+  # ===========================================================================
+  # TRIAL TEMPLATE
+  # ===========================================================================
+  trialTemplate:
+    primaryContainerName: training-container
+    trialParameters:
+      - name: nEstimators
+        reference: n-estimators
+      - name: maxDepth
+        reference: max-depth
+      - name: minSamplesSplit
+        reference: min-samples-split
+      - name: minSamplesLeaf
+        reference: min-samples-leaf
+      - name: maxFeaturesRatio
+        reference: max-features-ratio
+      - name: criterion
+        reference: criterion
+    trialSpec:
+      apiVersion: batch/v1
+      kind: Job
+      spec:
+        template:
+          metadata:
+            annotations:
+              sidecar.istio.io/inject: "false"
+          spec:
+            containers:
+              - name: training-container
+                image: katib-sklearn-example:v1.0
+                imagePullPolicy: Never
+                resources:
+                  requests:
+                    memory: "512Mi"
+                    cpu: "500m"
+                  limits:
+                    memory: "1Gi"
+                    cpu: "1000m"
+                command:
+                  - "python"
+                  - "/app/train.py"
+                  - "--n-estimators=${trialParameters.nEstimators}"
+                  - "--max-depth=${trialParameters.maxDepth}"
+                  - "--min-samples-split=${trialParameters.minSamplesSplit}"
+                  - "--min-samples-leaf=${trialParameters.minSamplesLeaf}"
+                  - "--max-features-ratio=${trialParameters.maxFeaturesRatio}"
+                  - "--criterion=${trialParameters.criterion}"
+                  - "--model-type=random_forest"
+                  - "--bootstrap=true"
+                  - "--num-epochs=5"
+            restartPolicy: Never
+

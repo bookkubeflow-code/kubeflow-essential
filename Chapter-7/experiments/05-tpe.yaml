@@ -1,0 +1,188 @@
+# =============================================================================
+# Experiment 05: Tree-structured Parzen Estimator (TPE)
+# =============================================================================
+# Demonstrates TPE - an alternative to Bayesian Optimization that handles
+# mixed parameter types and high-dimensional spaces more effectively.
+#
+# How TPE Works:
+# 1. Divides observations into "good" (top γ%) and "bad" (bottom 1-γ%)
+# 2. Models P(x|good) and P(x|bad) separately using Parzen estimators
+# 3. Suggests parameters that maximize P(x|good) / P(x|bad)
+# 4. Naturally handles categorical, conditional, and hierarchical parameters
+#
+# Comparison with Bayesian Optimization:
+# - TPE: Better for categorical-heavy spaces, scales to more parameters
+# - BO: Better for purely continuous spaces, more sample-efficient in low dims
+#
+# Use Case: Mixed parameter types, moderate to high dimensional spaces
+# Recommended When: Many categorical parameters, complex search spaces
+# =============================================================================
+
+apiVersion: kubeflow.org/v1beta1
+kind: Experiment
+metadata:
+  name: sklearn-tpe
+  namespace: kubeflow-user-example-com
+spec:
+  # ===========================================================================
+  # OBJECTIVE
+  # ===========================================================================
+  objective:
+    type: maximize
+    goal: 0.98
+    objectiveMetricName: accuracy
+    additionalMetricNames:
+      - f1_score
+      - auc
+
+  # ===========================================================================
+  # ALGORITHM: TPE
+  # ===========================================================================
+  # Tree-structured Parzen Estimator from Hyperopt
+  algorithm:
+    algorithmName: tpe
+    algorithmSettings:
+      # Random seed for reproducibility
+      - name: "random_state"
+        value: "42"
+
+  # ===========================================================================
+  # TRIAL LIMITS
+  # ===========================================================================
+  maxTrialCount: 30
+  parallelTrialCount: 3
+  maxFailedTrialCount: 4
+
+  # ===========================================================================
+  # SEARCH SPACE
+  # ===========================================================================
+  # TPE handles mixed parameter types naturally.
+  # This example includes more categorical parameters to showcase TPE's strength.
+  parameters:
+    # Integer parameters
+    - name: n-estimators
+      parameterType: int
+      feasibleSpace:
+        min: "50"
+        max: "300"
+    
+    - name: max-depth
+      parameterType: int
+      feasibleSpace:
+        min: "3"
+        max: "20"
+    
+    - name: min-samples-split
+      parameterType: int
+      feasibleSpace:
+        min: "2"
+        max: "20"
+    
+    - name: min-samples-leaf
+      parameterType: int
+      feasibleSpace:
+        min: "1"
+        max: "10"
+
+    # Float parameters
+    - name: max-features-ratio
+      parameterType: double
+      feasibleSpace:
+        min: "0.1"
+        max: "1.0"
+    
+    - name: learning-rate
+      parameterType: double
+      feasibleSpace:
+        min: "0.01"
+        max: "0.3"
+
+    # Multiple categorical parameters (TPE's strength)
+    - name: criterion
+      parameterType: categorical
+      feasibleSpace:
+        list:
+          - "gini"
+          - "entropy"
+          - "log_loss"
+    
+    - name: bootstrap
+      parameterType: categorical
+      feasibleSpace:
+        list:
+          - "true"
+          - "false"
+    
+    - name: model-type
+      parameterType: categorical
+      feasibleSpace:
+        list:
+          - "random_forest"
+          - "gradient_boosting"
+
+  # ===========================================================================
+  # METRICS COLLECTOR
+  # ===========================================================================
+  metricsCollectorSpec:
+    collector:
+      kind: StdOut
+
+  # ===========================================================================
+  # TRIAL TEMPLATE
+  # ===========================================================================
+  trialTemplate:
+    primaryContainerName: training-container
+    trialParameters:
+      - name: nEstimators
+        reference: n-estimators
+      - name: maxDepth
+        reference: max-depth
+      - name: minSamplesSplit
+        reference: min-samples-split
+      - name: minSamplesLeaf
+        reference: min-samples-leaf
+      - name: maxFeaturesRatio
+        reference: max-features-ratio
+      - name: learningRate
+        reference: learning-rate
+      - name: criterion
+        reference: criterion
+      - name: bootstrap
+        reference: bootstrap
+      - name: modelType
+        reference: model-type
+    trialSpec:
+      apiVersion: batch/v1
+      kind: Job
+      spec:
+        template:
+          metadata:
+            annotations:
+              sidecar.istio.io/inject: "false"
+          spec:
+            containers:
+              - name: training-container
+                image: katib-sklearn-example:v1.0
+                imagePullPolicy: Never
+                resources:
+                  requests:
+                    memory: "512Mi"
+                    cpu: "500m"
+                  limits:
+                    memory: "1Gi"
+                    cpu: "1000m"
+                command:
+                  - "python"
+                  - "/app/train.py"
+                  - "--n-estimators=${trialParameters.nEstimators}"
+                  - "--max-depth=${trialParameters.maxDepth}"
+                  - "--min-samples-split=${trialParameters.minSamplesSplit}"
+                  - "--min-samples-leaf=${trialParameters.minSamplesLeaf}"
+                  - "--max-features-ratio=${trialParameters.maxFeaturesRatio}"
+                  - "--learning-rate=${trialParameters.learningRate}"
+                  - "--criterion=${trialParameters.criterion}"
+                  - "--bootstrap=${trialParameters.bootstrap}"
+                  - "--model-type=${trialParameters.modelType}"
+                  - "--num-epochs=5"
+            restartPolicy: Never
+

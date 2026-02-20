@@ -1,0 +1,282 @@
+# =============================================================================
+# Experiment 07: Early Stopping Without Hyperband
+# =============================================================================
+# Demonstrates early stopping as a standalone feature with any algorithm.
+# Unlike Hyperband, this uses median stopping or other early stopping
+# algorithms independently of the search algorithm.
+#
+# Early Stopping Algorithms Available:
+# 1. medianstop - Stop trials performing worse than median at same step
+# 2. Never - Disable early stopping (default)
+#
+# When to Use:
+# - Training is iterative with checkpointing
+# - Poor configurations are identifiable early
+# - Want to save resources without changing search algorithm
+#
+# Key Requirement:
+# - Training script MUST log intermediate metrics at regular intervals
+# - Format: epoch=N metric_name=value
+# =============================================================================
+
+apiVersion: kubeflow.org/v1beta1
+kind: Experiment
+metadata:
+  name: sklearn-early-stopping
+  namespace: kubeflow-user-example-com
+spec:
+  # ===========================================================================
+  # OBJECTIVE
+  # ===========================================================================
+  objective:
+    type: maximize
+    goal: 0.97
+    objectiveMetricName: accuracy
+    additionalMetricNames:
+      - f1_score
+      - cv_accuracy
+
+  # ===========================================================================
+  # ALGORITHM: Random Search (any algorithm works with early stopping)
+  # ===========================================================================
+  algorithm:
+    algorithmName: random
+    algorithmSettings:
+      - name: "random_state"
+        value: "42"
+
+  # ===========================================================================
+  # TRIAL LIMITS
+  # ===========================================================================
+  maxTrialCount: 10
+  parallelTrialCount: 3
+  maxFailedTrialCount: 3
+
+  # ===========================================================================
+  # EARLY STOPPING CONFIGURATION
+  # ===========================================================================
+  # This is independent of the search algorithm!
+  # Works with random, grid, bayesian, TPE, etc.
+  earlyStopping:
+    # Algorithm: medianstop
+    # Compares each trial's intermediate metric to the median of all
+    # historical trials at the same step. Kills underperformers.
+    algorithmName: medianstop
+    algorithmSettings:
+      # Minimum completed trials before early stopping activates
+      # Needs enough data to compute meaningful median
+      - name: "min_trials_required"
+        value: "3"
+      
+      # Minimum epochs/steps before evaluating any trial for early stop
+      # Allows trials to stabilize before making termination decisions
+      - name: "start_step"
+        value: "2"
+
+  # ===========================================================================
+  # SEARCH SPACE
+  # ===========================================================================
+  parameters:
+    # Include num-epochs to allow longer training for better signals
+    - name: num-epochs
+      parameterType: int
+      feasibleSpace:
+        min: "5"
+        max: "15"
+    
+    - name: n-estimators
+      parameterType: int
+      feasibleSpace:
+        min: "50"
+        max: "250"
+    
+    - name: max-depth
+      parameterType: int
+      feasibleSpace:
+        min: "3"
+        max: "18"
+    
+    - name: min-samples-split
+      parameterType: int
+      feasibleSpace:
+        min: "2"
+        max: "15"
+    
+    - name: max-features-ratio
+      parameterType: double
+      feasibleSpace:
+        min: "0.2"
+        max: "0.9"
+    
+    - name: criterion
+      parameterType: categorical
+      feasibleSpace:
+        list:
+          - "gini"
+          - "entropy"
+
+  # ===========================================================================
+  # METRICS COLLECTOR
+  # ===========================================================================
+  # Using default StdOut collector for early stopping metrics
+  metricsCollectorSpec:
+    collector:
+      kind: StdOut
+
+  # ===========================================================================
+  # TRIAL TEMPLATE
+  # ===========================================================================
+  trialTemplate:
+    primaryContainerName: training-container
+    trialParameters:
+      - name: numEpochs
+        reference: num-epochs
+      - name: nEstimators
+        reference: n-estimators
+      - name: maxDepth
+        reference: max-depth
+      - name: minSamplesSplit
+        reference: min-samples-split
+      - name: maxFeaturesRatio
+        reference: max-features-ratio
+      - name: criterion
+        reference: criterion
+    trialSpec:
+      apiVersion: batch/v1
+      kind: Job
+      spec:
+        template:
+          metadata:
+            annotations:
+              sidecar.istio.io/inject: "false"
+          spec:
+            containers:
+              - name: training-container
+                image: katib-sklearn-example:v1.0
+                imagePullPolicy: Never
+                resources:
+                  requests:
+                    memory: "512Mi"
+                    cpu: "500m"
+                  limits:
+                    memory: "1Gi"
+                    cpu: "1000m"
+                command:
+                  - "python"
+                  - "/app/train.py"
+                  - "--num-epochs=${trialParameters.numEpochs}"
+                  - "--n-estimators=${trialParameters.nEstimators}"
+                  - "--max-depth=${trialParameters.maxDepth}"
+                  - "--min-samples-split=${trialParameters.minSamplesSplit}"
+                  - "--max-features-ratio=${trialParameters.maxFeaturesRatio}"
+                  - "--criterion=${trialParameters.criterion}"
+                  - "--model-type=random_forest"
+                  - "--bootstrap=true"
+            restartPolicy: Never
+
+---
+# =============================================================================
+# VARIATION: CMA-ES with Early Stopping
+# =============================================================================
+# Demonstrates early stopping with an evolutionary algorithm.
+
+apiVersion: kubeflow.org/v1beta1
+kind: Experiment
+metadata:
+  name: sklearn-cmaes-earlystop
+  namespace: kubeflow-user-example-com
+spec:
+  objective:
+    type: maximize
+    goal: 0.97
+    objectiveMetricName: accuracy
+
+  # CMA-ES: Covariance Matrix Adaptation Evolution Strategy
+  # Works well for continuous optimization
+  algorithm:
+    algorithmName: cmaes
+    algorithmSettings:
+      - name: "random_state"
+        value: "42"
+      # Restart strategy: None, IPOP (increasing population), BIPOP (bi-population)
+      - name: "restart_strategy"
+        value: "none"
+
+  maxTrialCount: 10
+  parallelTrialCount: 3
+  maxFailedTrialCount: 3
+
+  # Early stopping works with CMA-ES too!
+  earlyStopping:
+    algorithmName: medianstop
+    algorithmSettings:
+      - name: "min_trials_required"
+        value: "4"
+      - name: "start_step"
+        value: "3"
+
+  # CMA-ES works best with continuous parameters
+  parameters:
+    - name: num-epochs
+      parameterType: int
+      feasibleSpace:
+        min: "5"
+        max: "12"
+    
+    - name: n-estimators
+      parameterType: int
+      feasibleSpace:
+        min: "50"
+        max: "250"
+    
+    - name: max-depth
+      parameterType: int
+      feasibleSpace:
+        min: "3"
+        max: "18"
+    
+    - name: max-features-ratio
+      parameterType: double
+      feasibleSpace:
+        min: "0.2"
+        max: "0.9"
+
+  metricsCollectorSpec:
+    collector:
+      kind: StdOut
+
+  trialTemplate:
+    primaryContainerName: training-container
+    trialParameters:
+      - name: numEpochs
+        reference: num-epochs
+      - name: nEstimators
+        reference: n-estimators
+      - name: maxDepth
+        reference: max-depth
+      - name: maxFeaturesRatio
+        reference: max-features-ratio
+    trialSpec:
+      apiVersion: batch/v1
+      kind: Job
+      spec:
+        template:
+          metadata:
+            annotations:
+              sidecar.istio.io/inject: "false"
+          spec:
+            containers:
+              - name: training-container
+                image: katib-sklearn-example:v1.0
+                imagePullPolicy: Never
+                command:
+                  - "python"
+                  - "/app/train.py"
+                  - "--num-epochs=${trialParameters.numEpochs}"
+                  - "--n-estimators=${trialParameters.nEstimators}"
+                  - "--max-depth=${trialParameters.maxDepth}"
+                  - "--max-features-ratio=${trialParameters.maxFeaturesRatio}"
+                  - "--model-type=random_forest"
+                  - "--criterion=gini"
+            restartPolicy: Never
+
