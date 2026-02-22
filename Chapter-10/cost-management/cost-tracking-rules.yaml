@@ -1,0 +1,41 @@
+# Prometheus recording rules for cost tracking
+# Approximate costs based on AWS pricing
+groups:
+  - name: cost_tracking
+    interval: 5m
+    rules:
+      - record: namespace_gpu_cost_per_hour
+        expr: |
+          sum(kube_pod_info{node=~".*gpu.*"}) by (namespace) * 0.526
+
+      - record: namespace_cpu_cost_per_hour
+        expr: |
+          sum(kube_pod_container_resource_requests{resource="cpu",namespace!=""}) by (namespace)
+           / 1000 * 0.384 / 2  # Assuming 2 vCPUs per instance
+
+      - record: namespace_storage_cost_per_hour
+        expr: |
+          sum(kubelet_volume_stats_capacity_bytes{namespace!=""}) by (namespace)
+           / 1024 / 1024 / 1024 * 0.08 / 730  # Convert to GB, monthly rate to hourly
+
+# Grafana dashboard queries:
+#
+# Monthly Cost by Team (Bar gauge):
+#   sum(namespace_gpu_cost_per_hour{namespace!=""} * 730
+#       + namespace_cpu_cost_per_hour{namespace!=""} * 730
+#       + namespace_storage_cost_per_hour{namespace!=""} * 730) by (namespace)
+#
+# Cost Trend (Time series):
+#   sum(rate(namespace_gpu_cost_per_hour{namespace!=""}[1h]) * 730
+#       + rate(namespace_cpu_cost_per_hour{namespace!=""}[1h]) * 730
+#       + rate(namespace_storage_cost_per_hour{namespace!=""}[1h]) * 730) by (namespace)
+#
+# Cost per Successful Pipeline Run (Table):
+#   sum(namespace_gpu_cost_per_hour + namespace_cpu_cost_per_hour) by (namespace)
+#   / sum(increase(argo_workflows_count{status="Succeeded"}[30d])) by (namespace)
+#
+# GPU Allocation by Namespace:
+#   sum(kube_pod_info{node=~".*gpu.*"}) by (namespace)
+#
+# GPU Utilization:
+#   avg(DCGM_FI_DEV_GPU_UTIL{namespace!=""}) by (namespace) / 100

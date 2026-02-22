@@ -1,0 +1,15 @@
+# Example OIDC connector configuration for Azure AD
+# Add this to the Dex ConfigMap under the 'connectors' section
+connectors:
+- type: oidc
+  id: azure
+  name: Azure AD
+  config:
+    issuer: https://login.microsoftonline.com/YOUR_TENANT_ID/v2.0
+    clientID: YOUR_CLIENT_ID
+    clientSecret: YOUR_CLIENT_SECRET
+    redirectURI: https://YOUR_KUBEFLOW_URL/dex/callback
+    scopes:
+    - openid
+    - profile
+    - email

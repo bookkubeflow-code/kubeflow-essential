@@ -1,0 +1,34 @@
+# cifar10-trainjob.yaml
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: TrainJob
+metadata:
+  name: cifar10-distributed-training
+  namespace: kubeflow-user-example-com
+spec:
+  runtimeRef:
+    kind: ClusterTrainingRuntime
+    name: torch-distributed
+
+  trainer:
+    # Number of training nodes (workers)
+    numNodes: 3
+
+    # Your custom container image with training script
+    # Replace with your actual registry/image
+    image: <your-registry>/cifar10-training:v1
+
+    # Training command
+    command:
+      - "python"
+      - "/workspace/train_cifar10.py"
+      - "--batch-size=128"
+      - "--epochs=20"
+      - "--lr=0.001"
+      - "--checkpoint-dir=/workspace/checkpoints"
+
+    # Environment variables (optional)
+    env:
+      - name: NCCL_DEBUG
+        value: "INFO"
+      - name: PYTHONUNBUFFERED
+        value: "1"

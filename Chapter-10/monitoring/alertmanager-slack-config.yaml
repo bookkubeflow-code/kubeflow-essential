@@ -1,0 +1,32 @@
+# AlertManager Slack integration configuration
+# Add to prometheus-values.yaml under alertmanager.config
+alertmanager:
+  config:
+    global:
+      slack_api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+
+    route:
+      group_by: ['alertname', 'cluster']
+      group_wait: 10s
+      group_interval: 5m
+      repeat_interval: 12h
+      receiver: 'slack-kubeflow'
+
+      routes:
+        - match:
+            severity: critical
+          receiver: 'slack-critical'
+          repeat_interval: 1h
+
+    receivers:
+      - name: 'slack-kubeflow'
+        slack_configs:
+          - channel: '#kubeflow-alerts'
+            title: 'Kubeflow Alert'
+            text: '{{ range .Alerts }}{{ .Annotations.summary }}\n{{ end }}'
+
+      - name: 'slack-critical'
+        slack_configs:
+          - channel: '#kubeflow-critical'
+            title: 'CRITICAL: Kubeflow Alert'
+            text: '{{ range .Alerts }}{{ .Annotations.description }}\n{{ end }}'

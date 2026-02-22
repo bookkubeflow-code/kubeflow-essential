@@ -1,0 +1,34 @@
+# CronJob to clean up unused PVCs
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cleanup-unused-pvcs
+  namespace: kubeflow
+spec:
+  schedule: "0 3 * * 0"  # 3 AM every Sunday
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: pvc-cleanup-sa
+          containers:
+            - name: cleanup
+              image: bitnami/kubectl:1.28
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  # Find PVCs not used by any pod for 30+ days
+                  for pvc in $(kubectl get pvc -A -o json | jq -r '.items[] | select(.metadata.annotations["last-used"] < (now - 2592000 | todate)) | "\(.metadata.namespace)/\(.metadata.name)"'); do
+                    namespace=$(echo "$pvc" | cut -d'/' -f1)
+                    name=$(echo "$pvc" | cut -d'/' -f2)
+
+                    # Double-check it's not currently mounted
+                    mounted=$(kubectl get pods -n "$namespace" -o json | jq -r ".items[].spec.volumes[]? | select(.persistentVolumeClaim.claimName==\"$name\") | .name")
+
+                    if [ -z "$mounted" ]; then
+                      echo "Deleting unused PVC: $namespace/$name"
+                      kubectl delete pvc -n "$namespace" "$name"
+                    fi
+                  done
+          restartPolicy: OnFailure

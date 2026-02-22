@@ -1,0 +1,47 @@
+# Alert rules for Kubeflow platform monitoring
+# Add to prometheus-values.yaml under additionalPrometheusRulesMap
+prometheus:
+  prometheusSpec:
+    additionalPrometheusRulesMap:
+      kubeflow-alerts:
+        groups:
+          - name: kubeflow
+            interval: 30s
+            rules:
+              # Pipeline pods failing repeatedly
+              - alert: HighPipelinePodFailureRate
+                expr: |
+                  rate(kube_pod_container_status_restarts_total{namespace="kubeflow"}[15m]) > 0.1
+                for: 15m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: "High pod restart rate in {{ $labels.namespace }}"
+                  description: "Pods in namespace {{ $labels.namespace }} are restarting frequently. This usually indicates a bug or resource issue."
+
+              # GPU nodes unavailable
+              - alert: GPUNodeDown
+                expr: |
+                  kube_node_status_condition{condition="Ready",status="true",node=~".*gpu.*"} == 0
+                for: 5m
+                labels:
+                  severity: critical
+                annotations:
+                  summary: "GPU node {{ $labels.node }} is down"
+                  description: "GPU node {{ $labels.node }} has been unavailable for 5 minutes. Training workloads may be queued."
+
+              # Storage filling up
+              - alert: PersistentVolumeFillingUp
+                expr: |
+                  (kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes) > 0.85
+                for: 10m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: "PVC {{ $labels.persistentvolumeclaim }} is {{ $value | humanizePercentage }} full"
+                  description: "Persistent volume in namespace {{ $labels.namespace }} is running out of space."
+
+# Apply updated alerts with:
+# helm upgrade prometheus prometheus-community/kube-prometheus-stack \
+#   --namespace monitoring \
+#   --values prometheus-values.yaml

@@ -1,0 +1,76 @@
+# mnist-tfjob.yaml
+apiVersion: kubeflow.org/v1
+kind: TFJob
+metadata:
+  name: mnist-distributed-training
+  namespace: kubeflow-user-example-com
+spec:
+  cleanPodPolicy: None
+
+  tfReplicaSpecs:
+    Worker:
+      replicas: 3  # Total workers (index 0 is chief)
+      restartPolicy: OnFailure
+      template:
+        metadata:
+          annotations:
+            sidecar.istio.io/inject: "false"  # Prevent Istio interference
+        spec:
+          containers:
+          - name: tensorflow
+            image: tensorflow/tensorflow:2.13.0-gpu
+            command:
+              - python
+              - /workspace/train_mnist_tf.py
+              - --batch-size=64
+              - --epochs=15
+              - --checkpoint-dir=/workspace/checkpoints
+              - --log-dir=/workspace/logs
+            resources:
+              requests:
+                cpu: "4"
+                memory: "8Gi"
+                nvidia.com/gpu: "1"
+              limits:
+                cpu: "8"
+                memory: "16Gi"
+                nvidia.com/gpu: "1"
+
+            env:
+            # Performance optimizations
+            - name: TF_CPP_MIN_LOG_LEVEL
+              value: "1"
+            - name: TF_ENABLE_ONEDNN_OPTS
+              value: "1"
+            # NCCL settings for multi-GPU communication
+            - name: NCCL_DEBUG
+              value: "INFO"
+            - name: NCCL_SOCKET_IFNAME
+              value: "eth0"
+
+            volumeMounts:
+            - name: training-code
+              mountPath: /workspace
+              subPath: code
+            - name: checkpoint-storage
+              mountPath: /workspace/checkpoints
+            - name: log-storage
+              mountPath: /workspace/logs
+            - name: dshm
+              mountPath: /dev/shm
+
+          volumes:
+          - name: training-code
+            configMap:
+              name: mnist-tf-training-code
+          - name: checkpoint-storage
+            persistentVolumeClaim:
+              claimName: tf-checkpoint-pvc
+          - name: log-storage
+            persistentVolumeClaim:
+              claimName: tf-log-pvc
+          # Shared memory - CRITICAL for performance
+          - name: dshm
+            emptyDir:
+              medium: Memory
+              sizeLimit: 2Gi

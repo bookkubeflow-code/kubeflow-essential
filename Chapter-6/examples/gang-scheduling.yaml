@@ -1,0 +1,11 @@
+# Gang scheduling configuration
+# Either schedule all pods together, or don't schedule any of them.
+# This prevents resource waste and deadlocks in multi-node training.
+#
+# Add to ClusterTrainingRuntime or TrainJob
+spec:
+  mlPolicy:
+    numNodes: 4
+    podGroupPolicy:
+      coscheduling:
+        scheduleTimeoutSeconds: 300

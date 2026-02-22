@@ -1,0 +1,19 @@
+# Fault tolerance configuration for distributed training
+# Define policies for different failure scenarios
+spec:
+  template:
+    spec:
+      failurePolicy:
+        rules:
+        # Application-level failures: fail the entire job
+        - action: FailJob
+          onExitCodes:
+            containerName: pytorch
+            operator: In
+            values: [1, 2, 3]
+        # Infrastructure failures (SIGKILL, SIGTERM): ignore and reschedule
+        - action: Ignore
+          onExitCodes:
+            containerName: pytorch
+            operator: In
+            values: [137, 143]  # SIGKILL, SIGTERM

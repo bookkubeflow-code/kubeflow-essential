@@ -1,0 +1,29 @@
+# Resource quota examples for different team types
+# Adjust based on your cluster capacity and team needs
+
+---
+# Team: ML Research (heavy GPU users)
+# requests.cpu: "40"
+# requests.memory: "160Gi"
+# requests.nvidia.com/gpu: "8"
+
+---
+# Team: Data Engineering (CPU-heavy pipelines)
+# requests.cpu: "80"
+# requests.memory: "320Gi"
+# requests.nvidia.com/gpu: "0"
+
+---
+# Team: Production ML (moderate resources, high reliability)
+# requests.cpu: "60"
+# requests.memory: "240Gi"
+# requests.nvidia.com/gpu: "4"
+
+---
+# Team: Experimentation (small team, low resource needs)
+# requests.cpu: "20"
+# requests.memory: "80Gi"
+# requests.nvidia.com/gpu: "2"
+
+# Note: Total allocated resources can exceed cluster capacity (overcommitment).
+# Rule of thumb: overcommit CPU and memory by 1.5x, but never overcommit GPUs.

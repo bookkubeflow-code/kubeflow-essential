@@ -1,0 +1,20 @@
+# Example v2 TrainJob with Runtime reference
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: TrainJob
+metadata:
+  name: pytorch-training
+spec:
+  runtimeRef:
+    name: torch-distributed
+    apiGroup: trainer.kubeflow.org
+    kind: ClusterTrainingRuntime
+  trainer:
+    numNodes: 3
+    image: pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
+    command:
+      - "python3"
+      - "/workspace/train.py"
+    resourcesPerNode:
+      gpu: 1
+      memory: "8Gi"
+      cpu: "4"

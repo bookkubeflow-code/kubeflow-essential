@@ -1,0 +1,95 @@
+# .github/workflows/deploy-pipeline.yaml
+name: Deploy Kubeflow Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'pipelines/**'
+      - 'components/**'
+      - '.github/workflows/deploy-pipeline.yaml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'pipelines/**'
+      - 'components/**'
+
+jobs:
+  compile-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile pipelines
+        run: |
+          mkdir -p compiled
+          for pipeline in pipelines/*.py; do
+            echo "Compiling $pipeline..."
+            python scripts/compile_pipeline.py "$pipeline" "compiled/$(basename ${pipeline%.py}).yaml"
+          done
+
+      - name: Run tests
+        run: |
+          pip install pytest pytest-cov
+          pytest tests/ -v --cov=components --cov=pipelines
+
+      - name: Upload compiled pipelines
+        uses: actions/upload-artifact@v3
+        with:
+          name: compiled-pipelines
+          path: compiled/*.yaml
+          retention-days: 30
+
+  deploy-to-production:
+    needs: compile-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install kfp==2.13.0 pyyaml
+
+      - name: Download compiled pipelines
+        uses: actions/download-artifact@v3
+        with:
+          name: compiled-pipelines
+          path: compiled
+
+      - name: Configure environment
+        run: |
+          # Substitute environment variables in config
+          export GITHUB_SHA="${{ github.sha }}"
+          envsubst < config/prod.yaml > config/prod.resolved.yaml
+
+      - name: Deploy pipelines
+        env:
+          KUBEFLOW_ENDPOINT: ${{ secrets.KUBEFLOW_ENDPOINT }}
+        run: |
+          for pipeline_yaml in compiled/*.yaml; do
+            echo "Deploying $pipeline_yaml to production..."
+            python scripts/deploy_pipeline.py "$pipeline_yaml" prod
+          done

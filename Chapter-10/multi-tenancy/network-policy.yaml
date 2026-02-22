@@ -1,0 +1,38 @@
+# Network policy to prevent cross-namespace communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-cross-namespace
+  namespace: kubeflow-user-team-ml-fraud
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+  # Deny all ingress by default
+  ingress:
+    - from:
+        # Only allow traffic from same namespace
+        - podSelector: {}
+
+  # Allow egress to specific targets
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+
+    # Allow traffic within namespace
+    - to:
+        - podSelector: {}
+
+    # Allow traffic to Kubeflow shared services
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubeflow.org/shared: "true"

@@ -1,0 +1,8 @@
+# config/prod.yaml
+kubeflow:
+  host: "https://kubeflow.example.com"
+  namespace: "kubeflow-prod"
+
+experiment_name: "production-experiments"
+version: "${GITHUB_SHA}"  # GitHub Actions will populate this
+auto_run: false  # Don't auto-run in production

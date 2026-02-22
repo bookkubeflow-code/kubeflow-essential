@@ -1,0 +1,26 @@
+# tf-storage.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tf-checkpoint-pvc
+  namespace: kubeflow-user-example-com
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tf-log-pvc
+  namespace: kubeflow-user-example-com
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard

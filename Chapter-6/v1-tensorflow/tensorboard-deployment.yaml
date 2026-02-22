@@ -1,0 +1,45 @@
+# tensorboard-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tensorboard-mnist
+  namespace: kubeflow-user-example-com
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tensorboard-mnist
+  template:
+    metadata:
+      labels:
+        app: tensorboard-mnist
+    spec:
+      containers:
+      - name: tensorboard
+        image: tensorflow/tensorflow:2.13.0
+        command: ["tensorboard", "--logdir=/logs", "--host=0.0.0.0", "--port=6006"]
+        ports:
+        - containerPort: 6006
+        volumeMounts:
+        - name: log-storage
+          mountPath: /logs
+      volumes:
+      - name: log-storage
+        persistentVolumeClaim:
+          claimName: tf-log-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tensorboard-mnist
+  namespace: kubeflow-user-example-com
+spec:
+  type: ClusterIP
+  ports:
+  - port: 6006
+    targetPort: 6006
+  selector:
+    app: tensorboard-mnist
+
+# Access with: kubectl port-forward -n kubeflow-user-example-com svc/tensorboard-mnist 6006:6006
+# Then open http://localhost:6006

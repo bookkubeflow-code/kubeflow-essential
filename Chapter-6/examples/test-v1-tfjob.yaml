@@ -1,0 +1,15 @@
+# Test v1 installation with a simple TFJob
+apiVersion: kubeflow.org/v1
+kind: TFJob
+metadata:
+  name: test-tfjob
+spec:
+  tfReplicaSpecs:
+    Worker:
+      replicas: 1
+      template:
+        spec:
+          containers:
+          - name: tensorflow
+            image: tensorflow/tensorflow:2.13.0
+            command: ["python", "-c", "print('TFJob test successful')"]

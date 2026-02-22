@@ -1,0 +1,27 @@
+# storage.yaml - Persistent storage for CIFAR-10 training
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cifar10-training-pvc
+  namespace: kubeflow-user-example-com
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cifar10-data-pvc
+  namespace: kubeflow-user-example-com
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard

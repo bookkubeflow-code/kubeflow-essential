@@ -1,0 +1,39 @@
+# CronJob to delete old pipeline artifacts from S3
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cleanup-old-artifacts
+  namespace: kubeflow
+spec:
+  schedule: "0 2 * * 0"  # 2 AM every Sunday
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: pipeline-cleanup-sa
+          containers:
+            - name: cleanup
+              image: amazon/aws-cli:2.13.0
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  # Delete S3 objects older than 90 days from failed pipeline runs
+                  cutoff_date=$(date -d '90 days ago' +%Y-%m-%d)
+
+                  aws s3api list-objects-v2 \
+                    --bucket my-ml-pipeline-artifacts \
+                    --prefix "v2/artifacts/" \
+                    --query "Contents[?LastModified<'$cutoff_date'].Key" \
+                    --output text | \
+                  while read -r key; do
+                    # Check if this artifact belongs to a failed run
+                    run_id=$(echo "$key" | cut -d'/' -f4)
+                    status=$(kubectl get pipelineruns -n kubeflow "$run_id" -o jsonpath='{.status.conditions[0].reason}' 2>/dev/null || echo "NotFound")
+
+                    if [ "$status" = "Failed" ] || [ "$status" = "NotFound" ]; then
+                      echo "Deleting old artifact: $key"
+                      aws s3 rm "s3://my-ml-pipeline-artifacts/$key"
+                    fi
+                  done
+          restartPolicy: OnFailure
